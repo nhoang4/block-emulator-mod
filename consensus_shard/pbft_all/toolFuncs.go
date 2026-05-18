@@ -36,8 +36,10 @@ func (p *PbftConsensusNode) set2DMap(isPrePareConfirm bool, key string, val *sha
 // get neighbor nodes in a shard
 func (p *PbftConsensusNode) getNeighborNodes() []string {
 	receiverNodes := make([]string, 0)
-	for _, ip := range p.ip_nodeTable[p.ShardID] {
-		receiverNodes = append(receiverNodes, ip)
+	for nid := uint64(0); nid < p.node_nums; nid++ {
+		if ip, ok := p.ip_nodeTable[p.ShardID][nid]; ok {
+			receiverNodes = append(receiverNodes, ip)
+		}
 	}
 	return receiverNodes
 }
@@ -45,8 +47,10 @@ func (p *PbftConsensusNode) getNeighborNodes() []string {
 // get node ips of shard id=shardID
 func (p *PbftConsensusNode) getNodeIpsWithinShard(shardID uint64) []string {
 	receiverNodes := make([]string, 0)
-	for _, ip := range p.ip_nodeTable[shardID] {
-		receiverNodes = append(receiverNodes, ip)
+	for nid := uint64(0); nid < p.node_nums; nid++ {
+		if ip, ok := p.ip_nodeTable[shardID][nid]; ok {
+			receiverNodes = append(receiverNodes, ip)
+		}
 	}
 	return receiverNodes
 }

@@ -3,6 +3,7 @@ package networks
 import (
 	"blockEmulator/params"
 	"bytes"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -21,6 +22,11 @@ var connectionPool = make(map[string]net.Conn, 0)
 var randomDelayGenerator *rand.Rand
 var rateLimiterDownload *rate.Limiter
 var rateLimiterUpload *rate.Limiter
+
+const (
+	tcpDialAttempts = 6
+	tcpDialBackoff  = 250 * time.Millisecond
+)
 
 // Define the latency, jitter and bandwidth here.
 // Init tools.
@@ -45,6 +51,10 @@ func InitNetworkTools() {
 }
 
 func TcpDial(context []byte, addr string) {
+	connMsg := make([]byte, 0, len(context)+1)
+	connMsg = append(connMsg, context...)
+	connMsg = append(connMsg, '\n')
+
 	go func() {
 		// simulate the delay
 		thisDelay := params.Delay
@@ -53,38 +63,51 @@ func TcpDial(context []byte, addr string) {
 		}
 		time.Sleep(time.Millisecond * time.Duration(thisDelay))
 
-		connMaplock.Lock()
-		defer connMaplock.Unlock()
-
-		var err error
-		var conn net.Conn // Define conn here
-
-		// if this connection is not built, build it.
-		if c, ok := connectionPool[addr]; ok {
-			if tcpConn, tcpOk := c.(*net.TCPConn); tcpOk {
-				if err := tcpConn.SetKeepAlive(true); err != nil {
-					delete(connectionPool, addr) // Remove if not alive
-					conn, err = net.Dial("tcp", addr)
-					if err != nil {
-						log.Println("Reconnect error", err)
-						return
-					}
-					connectionPool[addr] = conn
-				} else {
-					conn = c // Use the existing connection
-				}
+		var lastErr error
+		for attempt := 1; attempt <= tcpDialAttempts; attempt++ {
+			if err := tcpDialOnce(connMsg, addr); err != nil {
+				lastErr = err
+				time.Sleep(time.Duration(attempt) * tcpDialBackoff)
+				continue
 			}
-		} else {
-			conn, err = net.Dial("tcp", addr)
-			if err != nil {
-				log.Println("Connect error", err)
-				return
-			}
-			connectionPool[addr] = conn
+			return
 		}
-
-		writeToConn(append(context, '\n'), conn, rateLimiterUpload)
+		log.Printf("TcpDial failed to %s after %d attempts: %v\n", addr, tcpDialAttempts, lastErr)
 	}()
+}
+
+func tcpDialOnce(connMsg []byte, addr string) error {
+	connMaplock.Lock()
+	defer connMaplock.Unlock()
+
+	var err error
+	var conn net.Conn
+
+	if c, ok := connectionPool[addr]; ok {
+		if tcpConn, tcpOk := c.(*net.TCPConn); tcpOk {
+			if err := tcpConn.SetKeepAlive(true); err != nil {
+				_ = c.Close()
+				delete(connectionPool, addr)
+			} else {
+				conn = c
+			}
+		}
+	}
+
+	if conn == nil {
+		conn, err = net.DialTimeout("tcp", addr, 2*time.Second)
+		if err != nil {
+			return fmt.Errorf("connect: %w", err)
+		}
+		connectionPool[addr] = conn
+	}
+
+	if err := writeToConn(connMsg, conn, rateLimiterUpload); err != nil {
+		_ = conn.Close()
+		delete(connectionPool, addr)
+		return fmt.Errorf("write: %w", err)
+	}
+	return nil
 }
 
 // Broadcast sends a message to multiple receivers, excluding the sender.

@@ -3,7 +3,6 @@ package networks
 import (
 	"context"
 	"io"
-	"log"
 	"net"
 
 	"golang.org/x/time/rate"
@@ -33,14 +32,14 @@ func (w *rateLimitedWriter) Write(p []byte) (int, error) {
 	return w.writer.Write(p)
 }
 
-func writeToConn(connMsg []byte, conn net.Conn, limiter *rate.Limiter) {
+func writeToConn(connMsg []byte, conn net.Conn, limiter *rate.Limiter) error {
 	// Wrap the connection with rateLimitedWriter
 	rateLimitedConn := &rateLimitedWriter{writer: conn, limiter: limiter}
 
 	// writing data to the connection
 	_, err := rateLimitedConn.Write(connMsg)
 	if err != nil {
-		log.Println("Write error", err)
-		return
+		return err
 	}
+	return nil
 }
