@@ -3,6 +3,8 @@
 expTest
 run_logs/
 run-linux-local-*/
+run-linux-sparse-bridge-*/
+run-linux-broker-*/
 .codex-*/
 .codex-*
 .codex-tools/

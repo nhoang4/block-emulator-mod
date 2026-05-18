@@ -41,6 +41,7 @@ cp paramsConfig.json "$RUN_ROOT/params-c.json"
 pids=()
 watchdog_pid=""
 finished=0
+emulator_pattern='(^|[[:space:]/])block-emulator-mod([[:space:]]|$)'
 
 cleanup() {
   local ec=$?
@@ -53,7 +54,7 @@ cleanup() {
     if ((${#pids[@]} > 0)); then
       kill "${pids[@]}" 2>/dev/null || true
     fi
-    pgrep -f './block-emulator-mod' | xargs -r kill -TERM 2>/dev/null || true
+    pgrep -f "$emulator_pattern" | xargs -r kill -TERM 2>/dev/null || true
   fi
   cp "$RUN_ROOT/ipTable.before.json" ipTable.json 2>/dev/null || true
   exit "$ec"
@@ -61,7 +62,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 if [[ "$KILL_EXISTING" == "1" ]]; then
-  pgrep -f './block-emulator-mod' | xargs -r kill -TERM 2>/dev/null || true
+  pgrep -f "$emulator_pattern" | xargs -r kill -TERM 2>/dev/null || true
   sleep 2
 fi
 
@@ -157,7 +158,7 @@ pids+=("$!")
   sleep "$WATCHDOG_SECONDS"
   echo "[local] watchdog timeout after ${WATCHDOG_SECONDS}s; terminating run" >>"$RUN_ROOT/watchdog.out"
   kill "${pids[@]}" 2>/dev/null || true
-  pgrep -f './block-emulator-mod' | xargs -r kill -TERM 2>/dev/null || true
+  pgrep -f "$emulator_pattern" | xargs -r kill -TERM 2>/dev/null || true
 ) &
 watchdog_pid="$!"
 
