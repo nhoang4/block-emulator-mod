@@ -47,7 +47,7 @@ func initConfig(nid, nnm, sid, snm uint64) *params.ChainConfig {
 func BuildSupervisor(nnm, snm uint64) {
 	methodID := params.ConsensusMethod
 	var measureMod []string
-	if methodID == 0 || methodID == 2 {
+	if methodID == 0 || methodID == 2 || methodID == 4 {
 		measureMod = params.MeasureBrokerMod
 	} else {
 		measureMod = params.MeasureRelayMod

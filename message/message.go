@@ -3,7 +3,10 @@ package message
 import (
 	"blockEmulator/core"
 	"blockEmulator/shard"
+	"math/big"
 	"time"
+
+	"github.com/niclabs/tcrsa"
 )
 
 var prefixMSGtypeLen = 30
@@ -25,6 +28,8 @@ const (
 
 	CBlockInfo MessageType = "BlockInfo"
 	CSeqIDinfo MessageType = "SequenceID"
+
+	CBridgeOverlay MessageType = "BridgeOverlay"
 )
 
 var (
@@ -47,6 +52,10 @@ type PrePrepare struct {
 	RequestMsg *Request // the request message should be pre-prepared
 	Digest     []byte   // the digest of this request, which is the only identifier
 	SeqID      uint64
+
+	// Optional ShardBridge threshold-signature payload. Empty for other protocols.
+	B           []byte
+	BlockBPKCS1 []byte
 }
 
 type Prepare struct {
@@ -56,9 +65,10 @@ type Prepare struct {
 }
 
 type Commit struct {
-	Digest     []byte // To identify which request is prepared by this node
-	SeqID      uint64
-	SenderNode *shard.Node // To identify who send this message
+	Digest     []byte          // To identify which request is prepared by this node
+	SeqID      uint64          // PBFT sequence id
+	SenderNode *shard.Node     // To identify who send this message
+	PartialSig *tcrsa.SigShare // Optional ShardBridge threshold-signature share.
 }
 
 type Reply struct {
@@ -103,11 +113,30 @@ type BlockInfoMsg struct {
 	// for broker
 	Broker1Txs []*core.Transaction // cross transactions at first time by broker
 	Broker2Txs []*core.Transaction // cross transactions at second time by broker
+
+	// for bridge
+	Bridge1Txs       []*core.Transaction // cross transactions at first time by bridge
+	Bridge2Txs       []*core.Transaction // cross transactions at second time by bridge
+	BridgeForwardTxs []*core.Transaction // overlay forwarding hops, excluded from logical tx metrics
+	JointSig         tcrsa.Signature     // optional ShardBridge joint signature
+}
+
+type BridgeOverlayMsg struct {
+	Epoch        int
+	DegreeLimits []int
+	Edges        [][2]uint64
+	Routes       [][][]uint64
 }
 
 type SeqIDinfo struct {
 	SenderShardID uint64
 	SenderSeq     uint64
+
+	// Optional ShardBridge fields. Extra JSON fields are ignored by other protocols.
+	Tx2s       []*core.Transaction
+	SenderNode *shard.Node
+	Values     map[uint64]*big.Int
+	JointSig   tcrsa.Signature
 }
 
 func MergeMessage(msgType MessageType, content []byte) []byte {

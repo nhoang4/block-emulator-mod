@@ -25,12 +25,19 @@ type Transaction struct {
 
 	// used in transaction relaying
 	Relayed bool
+	// used in bridge, if the tx is not a bridge1 or bridge2 tx, these values should be empty.
+	HasBridge      bool
+	SenderIsBridge bool
 	// used in broker, if the tx is not a broker1 or broker2 tx, these values should be empty.
 	HasBroker      bool
 	SenderIsBroker bool
 	OriginalSender utils.Address
 	FinalRecipient utils.Address
 	RawTxHash      []byte
+
+	BridgeRoute        []uint64
+	BridgeRouteIndex   int
+	BridgeOverlayEpoch int
 }
 
 func (tx *Transaction) PrintTx() string {
@@ -86,7 +93,12 @@ func NewTransaction(sender, recipient string, value *big.Int, nonce uint64, prop
 	tx.FinalRecipient = ""
 	tx.OriginalSender = ""
 	tx.RawTxHash = nil
+	tx.HasBridge = false
+	tx.SenderIsBridge = false
 	tx.HasBroker = false
 	tx.SenderIsBroker = false
+	tx.BridgeRoute = nil
+	tx.BridgeRouteIndex = 0
+	tx.BridgeOverlayEpoch = 0
 	return tx
 }

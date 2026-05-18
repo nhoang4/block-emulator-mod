@@ -59,6 +59,10 @@ func main() {
 		return
 	}
 
+	if params.ConsensusMethod < 0 || params.ConsensusMethod >= len(params.CommitteeMethod) {
+		log.Panicf("Wrong ConsensusMethod. This ConsensusMethod is %d, but valid range is [0, %d). ", params.ConsensusMethod, len(params.CommitteeMethod))
+	}
+
 	if isSupervisor {
 		build.BuildSupervisor(uint64(nodeNum), uint64(shardNum))
 	} else {

@@ -13,8 +13,8 @@ import (
 
 // this func is only invoked by main node
 func (p *PbftConsensusNode) Propose() {
-	// wait other nodes to start TCPlistening, sleep 5 sec.
-	time.Sleep(5 * time.Second)
+	// Wait for peer TCP listeners before the leader starts proposing.
+	time.Sleep(time.Duration(params.PbftStartDelay) * time.Millisecond)
 
 	nextRoundBeginSignal := make(chan bool)
 
@@ -51,6 +51,7 @@ func (p *PbftConsensusNode) Propose() {
 				}
 
 				p.sequenceLock.Lock()
+				p.sequenceLockHeld.Store(true)
 				p.pl.Plog.Printf("S%dN%d get sequenceLock locked, now trying to propose...\n", p.ShardID, p.NodeID)
 				// propose
 				// implement interface to generate propose
@@ -61,9 +62,11 @@ func (p *PbftConsensusNode) Propose() {
 				p.pl.Plog.Printf("S%dN%d put the request into the pool ...\n", p.ShardID, p.NodeID)
 
 				ppmsg := message.PrePrepare{
-					RequestMsg: r,
-					Digest:     digest,
-					SeqID:      p.sequenceID,
+					RequestMsg:  r,
+					Digest:      digest,
+					SeqID:       p.sequenceID,
+					B:           p.bridgePreparedHash,
+					BlockBPKCS1: p.bridgePreparedPKCS1,
 				}
 				p.height2Digest[p.sequenceID] = string(digest)
 				// marshal and broadcast
@@ -176,7 +179,10 @@ func (p *PbftConsensusNode) handlePrepare(content []byte) {
 		p.pl.Plog.Printf("S%dN%d : inconsistent sequence ID, refuse to commit\n", p.ShardID, p.NodeID)
 	} else {
 		// if needed more operations, implement interfaces
-		p.ihm.HandleinPrepare(pmsg)
+		if !p.ihm.HandleinPrepare(pmsg) {
+			p.pl.Plog.Printf("S%dN%d : extra prepare handler refused to commit\n", p.ShardID, p.NodeID)
+			return
+		}
 
 		p.set2DMap(true, string(pmsg.Digest), pmsg.SenderNode)
 		cnt := len(p.cntPrepareConfirm[string(pmsg.Digest)])
@@ -191,6 +197,13 @@ func (p *PbftConsensusNode) handlePrepare(content []byte) {
 				Digest:     pmsg.Digest,
 				SeqID:      pmsg.SeqID,
 				SenderNode: p.RunningNode,
+			}
+			if p.isBridgeMode() {
+				if p.bridgePartialSig == nil {
+					p.pl.Plog.Printf("S%dN%d : bridge partial signature is missing, refuse to broadcast commit\n", p.ShardID, p.NodeID)
+					return
+				}
+				c.PartialSig = p.bridgePartialSig
 			}
 			commitByte, err := json.Marshal(c)
 			if err != nil {
@@ -231,11 +244,18 @@ func (p *PbftConsensusNode) handleCommit(content []byte) {
 	}
 
 	p.pl.Plog.Printf("S%dN%d received the Commit from ...%d\n", p.ShardID, p.NodeID, cmsg.SenderNode.NodeID)
+	if p.isBridgeMode() {
+		p.collectBridgeCommitSig(cmsg)
+	}
 	p.set2DMap(false, string(cmsg.Digest), cmsg.SenderNode)
 	cnt := len(p.cntCommitConfirm[string(cmsg.Digest)])
 
 	p.lock.Lock()
 	defer p.lock.Unlock()
+
+	if p.stopSignal.Load() {
+		return
+	}
 
 	if uint64(cnt) >= 2*p.malicious_nums+1 && !p.isReply[string(cmsg.Digest)] {
 		p.pl.Plog.Printf("S%dN%d : has received 2f + 1 commits ... \n", p.ShardID, p.NodeID)
@@ -265,6 +285,10 @@ func (p *PbftConsensusNode) handleCommit(content []byte) {
 			networks.TcpDial(msg_send, orequest.ServerNode.IPaddr)
 		} else {
 			// implement interface
+			if p.isBridgeMode() && p.NodeID == uint64(p.view.Load()) && !p.hasEnoughBridgeSignatureShares() {
+				p.pl.Plog.Printf("S%dN%d : waiting for bridge signature shares before leader commit (%d/%d)\n", p.ShardID, p.NodeID, len(p.bridgeSigShares), p.bridgeMeta.K)
+				return
+			}
 			p.ihm.HandleinCommit(cmsg)
 			p.isReply[string(cmsg.Digest)] = true
 			p.pl.Plog.Printf("S%dN%d: this round of pbft %d is end \n", p.ShardID, p.NodeID, p.sequenceID)
@@ -274,8 +298,8 @@ func (p *PbftConsensusNode) handleCommit(content []byte) {
 		p.pbftStage.Store(1)
 		p.lastCommitTime.Store(time.Now().UnixMilli())
 
-		// if this node is a main node, then unlock the sequencelock
-		if p.NodeID == uint64(p.view.Load()) {
+		// Release only if this node actually acquired the propose lock.
+		if p.sequenceLockHeld.CompareAndSwap(true, false) {
 			p.sequenceLock.Unlock()
 			p.pl.Plog.Printf("S%dN%d get sequenceLock unlocked...\n", p.ShardID, p.NodeID)
 		}

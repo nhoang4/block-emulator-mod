@@ -61,6 +61,8 @@ func (d *Supervisor) NewSupervisor(ip string, pcc *params.ChainConfig, committee
 		d.comMod = committee.NewCLPACommitteeModule(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.TotalDataSize, params.TxBatchSize, params.ReconfigTimeGap)
 	case "Broker":
 		d.comMod = committee.NewBrokerCommitteeMod(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.TotalDataSize, params.TxBatchSize)
+	case "Bridge":
+		d.comMod = committee.NewBridgeCommitteeMod(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.TotalDataSize, params.TxBatchSize)
 	default:
 		d.comMod = committee.NewRelayCommitteeModule(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.TotalDataSize, params.TxBatchSize)
 	}
@@ -120,7 +122,15 @@ func (d *Supervisor) handleBlockInfos(content []byte) {
 func (d *Supervisor) SupervisorTxHandling() {
 	d.comMod.MsgSendingControl()
 	// TxHandling is end
+	waitTicks := 0
 	for !d.Ss.GapEnough() { // wait all txs to be handled
+		time.Sleep(time.Second)
+	}
+	for drainable, ok := d.comMod.(committee.DrainableCommitteeModule); ok && !drainable.ExecutionDrained(); {
+		if waitTicks%10 == 0 {
+			d.sl.Slog.Printf("Supervisor: waiting for committee execution drain: %s\n", drainable.DrainStatus())
+		}
+		waitTicks++
 		time.Sleep(time.Second)
 	}
 	// send stop message

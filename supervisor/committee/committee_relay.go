@@ -10,10 +10,12 @@ import (
 	"blockEmulator/utils"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"math/big"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -25,6 +27,11 @@ type RelayCommitteeModule struct {
 	IpNodeTable  map[uint64]map[uint64]string
 	sl           *supervisor_log.SupervisorLog
 	Ss           *signal.StopSignal // to control the stop message sending
+
+	relayModuleLock sync.Mutex
+	normalCommitNum int
+	relay1CommitNum int
+	relay2CommitNum int
 }
 
 func NewRelayCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *signal.StopSignal, slog *supervisor_log.SupervisorLog, csvFilePath string, dataNum, batchNum int) *RelayCommitteeModule {
@@ -126,4 +133,34 @@ func (rthm *RelayCommitteeModule) MsgSendingControl() {
 // no operation here
 func (rthm *RelayCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	rthm.sl.Slog.Printf("received from shard %d in epoch %d.\n", b.SenderShardID, b.Epoch)
+	if b.BlockBodyLength == 0 {
+		return
+	}
+
+	rthm.relayModuleLock.Lock()
+	rthm.normalCommitNum += len(b.InnerShardTxs)
+	rthm.relay1CommitNum += len(b.Relay1Txs)
+	rthm.relay2CommitNum += len(b.Relay2Txs)
+	rthm.relayModuleLock.Unlock()
+}
+
+func (rthm *RelayCommitteeModule) ExecutionDrained() bool {
+	rthm.relayModuleLock.Lock()
+	defer rthm.relayModuleLock.Unlock()
+
+	return rthm.normalCommitNum+rthm.relay1CommitNum >= rthm.dataTotalNum &&
+		rthm.relay2CommitNum >= rthm.relay1CommitNum
+}
+
+func (rthm *RelayCommitteeModule) DrainStatus() string {
+	rthm.relayModuleLock.Lock()
+	defer rthm.relayModuleLock.Unlock()
+
+	return fmt.Sprintf(
+		"normal+relay1 %d/%d, relay1 %d, relay2 %d",
+		rthm.normalCommitNum+rthm.relay1CommitNum,
+		rthm.dataTotalNum,
+		rthm.relay1CommitNum,
+		rthm.relay2CommitNum,
+	)
 }

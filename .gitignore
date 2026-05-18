@@ -1,8 +1,24 @@
 # 不要上传实验结果！
 # Do not upload your experimental results!
 expTest
+run_logs/
+.codex-*/
+.codex-*
+.codex-tools/
 
 # 不要上传可执行文件！
 # Do not upload your executable files!
 *.exe
+block-emulator-mod
+blockEmulator_*
 
+# Local OS/editor noise
+.DS_Store
+
+# Large local transaction datasets. Copy these to experiment machines separately
+# or use Git LFS if you intentionally want GitHub to host them.
+TxData/*.csv
+
+# Legacy root-level threshold-key files; bridge_keys/n*/ is the canonical store.
+/metadata.json
+/shares.json

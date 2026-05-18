@@ -9,10 +9,12 @@ import (
 	"blockEmulator/message"
 	"blockEmulator/networks"
 	"blockEmulator/params"
+	"blockEmulator/pcn"
 	"blockEmulator/shard"
 	"bufio"
 	"io"
 	"log"
+	"math/big"
 	"net"
 	"strconv"
 	"sync"
@@ -21,6 +23,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/niclabs/tcrsa"
 )
 
 type PbftConsensusNode struct {
@@ -62,9 +65,10 @@ type PbftConsensusNode struct {
 	conditionalVarpbftLock sync.Cond
 
 	// locks about pbft
-	sequenceLock sync.Mutex // the lock of sequence
-	lock         sync.Mutex // lock the stage
-	askForLock   sync.Mutex // lock for asking for a serise of requests
+	sequenceLock     sync.Mutex // the lock of sequence
+	sequenceLockHeld atomic.Bool
+	lock             sync.Mutex // lock the stage
+	askForLock       sync.Mutex // lock for asking for a serise of requests
 
 	// seqID of other Shards, to synchronize
 	seqIDMap   map[uint64]uint64
@@ -75,6 +79,24 @@ type PbftConsensusNode struct {
 	// tcp control
 	tcpln       net.Listener
 	tcpPoolLock sync.Mutex
+
+	// ShardBridge state. These fields are initialized and used only by the
+	// Bridge handler, so the other protocols keep their existing behavior.
+	bridges             *pcn.Bridges
+	bridgeBalances      map[uint64]*big.Int
+	bridgeMeta          tcrsa.KeyMeta
+	bridgeShare         tcrsa.KeyShare
+	bridgePreparedHash  []byte
+	bridgePreparedPKCS1 []byte
+	bridgePartialSig    *tcrsa.SigShare
+	bridgeJointSig      tcrsa.Signature
+	bridgeSigShares     tcrsa.SigShareList
+	bridgeSigSeen       map[uint64]bool
+	bridgeOverlayEpoch  int
+	bridgeDegreeLimits  []int
+	bridgeOverlayEdges  [][2]uint64
+	bridgeOverlayRoutes [][][]uint64
+	bridgeOverlayLock   sync.RWMutex
 
 	// to handle the message in the pbft
 	ihm ExtraOpInConsensus
@@ -156,6 +178,14 @@ func NewPbftNode(shardID, nodeID uint64, pcc *params.ChainConfig, messageHandleT
 			pbftNode: p,
 		}
 		p.ohm = &RawBrokerOutsideModule{
+			pbftNode: p,
+		}
+	case "Bridge":
+		p.initBridgeState()
+		p.ihm = &RawBridgePbftExtraHandleMod{
+			pbftNode: p,
+		}
+		p.ohm = &RawBridgeOutsideModule{
 			pbftNode: p,
 		}
 	default:
@@ -253,7 +283,9 @@ func (p *PbftConsensusNode) WaitToStop() {
 	p.stopSignal.Store(true)
 	networks.CloseAllConnInPool()
 	p.tcpln.Close()
+	p.lock.Lock()
 	p.closePbft()
+	p.lock.Unlock()
 	p.pl.Plog.Println("handled stop message in TCPListen Routine")
 	p.pStop <- 1
 }

@@ -7,3 +7,8 @@ type CommitteeModule interface {
 	MsgSendingControl()
 	HandleOtherMessage([]byte)
 }
+
+type DrainableCommitteeModule interface {
+	ExecutionDrained() bool
+	DrainStatus() string
+}

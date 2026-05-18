@@ -33,6 +33,10 @@ type BrokerCommitteeMod struct {
 	brokerConfirm2Pool map[string]*message.Mag2Confirm
 	brokerTxPool       []*core.Transaction
 	brokerModuleLock   sync.Mutex
+	rawCrossTxNum      int
+	normalCommitNum    int
+	broker1CommitNum   int
+	broker2CommitNum   int
 
 	// logger module
 	sl *supervisor_log.SupervisorLog
@@ -151,6 +155,10 @@ func (bcm *BrokerCommitteeMod) HandleBlockInfo(b *message.BlockInfoMsg) {
 		return
 	}
 
+	bcm.brokerModuleLock.Lock()
+	bcm.normalCommitNum += len(b.InnerShardTxs)
+	bcm.brokerModuleLock.Unlock()
+
 	// add createConfirm
 	txs := make([]*core.Transaction, 0)
 	txs = append(txs, b.Broker1Txs...)
@@ -267,6 +275,7 @@ func (bcm *BrokerCommitteeMod) handleBrokerRawMag(brokerRawMags []*message.Broke
 	brokerType1Mags := make([]*message.BrokerType1Meg, 0)
 	fmt.Println("broker receive ctx ", len(brokerRawMags))
 	bcm.brokerModuleLock.Lock()
+	bcm.rawCrossTxNum += len(brokerRawMags)
 	for _, meg := range brokerRawMags {
 		b.BrokerRawMegs[string(bcm.getBrokerRawMagDigest(meg))] = meg
 		brokerType1Mag := &message.BrokerType1Meg{
@@ -294,6 +303,7 @@ func (bcm *BrokerCommitteeMod) handleTx1ConfirmMag(mag1confirms []*message.Mag1C
 			continue
 		}
 		b.RawTx2BrokerTx[string(RawMeg.Tx.TxHash)] = append(b.RawTx2BrokerTx[string(RawMeg.Tx.TxHash)], string(mag1confirm.Tx1Hash))
+		bcm.broker1CommitNum++
 		brokerType2Mag := &message.BrokerType2Meg{
 			Broker: bcm.broker.BrokerAddress[0],
 			RawMeg: RawMeg,
@@ -314,10 +324,43 @@ func (bcm *BrokerCommitteeMod) handleTx2ConfirmMag(mag2confirms []*message.Mag2C
 		b.RawTx2BrokerTx[string(RawMeg.Tx.TxHash)] = append(b.RawTx2BrokerTx[string(RawMeg.Tx.TxHash)], string(mag2confirm.Tx2Hash))
 		if len(b.RawTx2BrokerTx[string(RawMeg.Tx.TxHash)]) == 2 {
 			num++
+			bcm.broker2CommitNum++
 		} else {
 			fmt.Println(len(b.RawTx2BrokerTx[string(RawMeg.Tx.TxHash)]))
 		}
 	}
 	bcm.brokerModuleLock.Unlock()
 	fmt.Println("finish ctx with adding tx1 and tx2 to txpool,len", num)
+}
+
+func (bcm *BrokerCommitteeMod) ExecutionDrained() bool {
+	bcm.brokerModuleLock.Lock()
+	defer bcm.brokerModuleLock.Unlock()
+
+	expectedNormal := bcm.dataTotalNum - bcm.rawCrossTxNum
+	if expectedNormal < 0 {
+		expectedNormal = 0
+	}
+	return bcm.normalCommitNum >= expectedNormal &&
+		bcm.broker1CommitNum >= bcm.rawCrossTxNum &&
+		bcm.broker2CommitNum >= bcm.rawCrossTxNum
+}
+
+func (bcm *BrokerCommitteeMod) DrainStatus() string {
+	bcm.brokerModuleLock.Lock()
+	defer bcm.brokerModuleLock.Unlock()
+
+	expectedNormal := bcm.dataTotalNum - bcm.rawCrossTxNum
+	if expectedNormal < 0 {
+		expectedNormal = 0
+	}
+	return fmt.Sprintf(
+		"normal %d/%d, broker1 %d/%d, broker2 %d/%d",
+		bcm.normalCommitNum,
+		expectedNormal,
+		bcm.broker1CommitNum,
+		bcm.rawCrossTxNum,
+		bcm.broker2CommitNum,
+		bcm.rawCrossTxNum,
+	)
 }

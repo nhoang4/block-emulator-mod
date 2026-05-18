@@ -8,6 +8,8 @@ require (
 	github.com/spf13/pflag v1.0.5
 )
 
+require github.com/niclabs/tcrsa v0.0.5
+
 require (
 	github.com/DataDog/zstd v1.5.2 // indirect
 	github.com/StackExchange/wmi v0.0.0-20180116203802-5d049714c4a6 // indirect
