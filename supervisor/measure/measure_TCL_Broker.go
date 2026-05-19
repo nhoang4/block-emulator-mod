@@ -2,10 +2,14 @@ package measure
 
 import (
 	"blockEmulator/message"
-	"fmt"
 	"strconv"
 	"time"
 )
+
+type pendingBroker2Tx struct {
+	epochID    int
+	commitTime time.Time
+}
 
 // to test average Transaction_Confirm_Latency (TCL) in this system
 type TestModule_TCL_Broker struct {
@@ -22,7 +26,8 @@ type TestModule_TCL_Broker struct {
 	broker2TxNum []int
 	txNum        []float64 // record the txNumber in each epoch
 
-	brokerTxMap map[string]time.Time // map: origin raw tx' hash to the time when the corresponding broker1 tx was added into the pool.
+	brokerTxMap       map[string]time.Time // map: origin raw tx' hash to the time when the corresponding broker1 tx was added into the pool.
+	pendingBroker2Txs map[string][]pendingBroker2Tx
 }
 
 func NewTestModule_TCL_Broker() *TestModule_TCL_Broker {
@@ -34,11 +39,12 @@ func NewTestModule_TCL_Broker() *TestModule_TCL_Broker {
 		ctxCommitLatency:      make([]int64, 0),
 		normalTxCommitLatency: make([]int64, 0),
 
-		txNum:        make([]float64, 0),
-		normalTxNum:  make([]int, 0),
-		broker1TxNum: make([]int, 0),
-		broker2TxNum: make([]int, 0),
-		brokerTxMap:  make(map[string]time.Time),
+		txNum:             make([]float64, 0),
+		normalTxNum:       make([]int, 0),
+		broker1TxNum:      make([]int, 0),
+		broker2TxNum:      make([]int, 0),
+		brokerTxMap:       make(map[string]time.Time),
+		pendingBroker2Txs: make(map[string][]pendingBroker2Tx),
 	}
 }
 
@@ -83,15 +89,27 @@ func (tml *TestModule_TCL_Broker) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 	}
 	// broker
 	for _, b1tx := range b.Broker1Txs {
-		tml.brokerTxMap[string(b1tx.RawTxHash)] = b1tx.Time
+		rawHash := string(b1tx.RawTxHash)
+		tml.brokerTxMap[rawHash] = b1tx.Time
+		if pendingTxs, ok := tml.pendingBroker2Txs[rawHash]; ok {
+			for _, pendingTx := range pendingTxs {
+				tml.totTxLatencyEpoch[pendingTx.epochID] += pendingTx.commitTime.Sub(b1tx.Time).Seconds()
+				tml.ctxCommitLatency[pendingTx.epochID] += pendingTx.commitTime.Sub(b1tx.Time).Milliseconds()
+			}
+			delete(tml.pendingBroker2Txs, rawHash)
+		}
 		tml.broker1CommitLatency[epochid] += int64(b.CommitTime.Sub(b1tx.Time).Milliseconds())
 	}
 	for _, b2tx := range b.Broker2Txs {
-		if b1txProposeTime, ok := tml.brokerTxMap[string(b2tx.RawTxHash)]; ok {
+		rawHash := string(b2tx.RawTxHash)
+		if b1txProposeTime, ok := tml.brokerTxMap[rawHash]; ok {
 			tml.totTxLatencyEpoch[epochid] += b.CommitTime.Sub(b1txProposeTime).Seconds()
 			tml.ctxCommitLatency[epochid] += b.CommitTime.Sub(b1txProposeTime).Milliseconds()
 		} else {
-			fmt.Println("Missing a broker1 tx. ")
+			tml.pendingBroker2Txs[rawHash] = append(tml.pendingBroker2Txs[rawHash], pendingBroker2Tx{
+				epochID:    epochid,
+				commitTime: b.CommitTime,
+			})
 		}
 		tml.broker2CommitLatency[epochid] += int64(b.CommitTime.Sub(b2tx.Time).Milliseconds())
 	}

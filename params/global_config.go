@@ -35,6 +35,7 @@ var (
 	RelayWithMerkleProof = 0  // When using a consensus about "Relay", nodes will send Tx Relay with proof if "RelayWithMerkleProof" = 1
 
 	BridgeOverlayEnabled   = 0
+	BridgeOverlayBuildMode = 0
 	BridgeOverlayMinDegree = 2
 	BridgeOverlayMaxDegree = 10
 	BridgeOverlaySeed      = int64(1)
@@ -86,6 +87,7 @@ type globalConfig struct {
 	ReconfigTimeGap      int    `json:"ReconfigTimeGap"`
 
 	BridgeOverlayEnabled   int    `json:"BridgeOverlayEnabled"`
+	BridgeOverlayBuildMode int    `json:"BridgeOverlayBuildMode"`
 	BridgeOverlayMinDegree int    `json:"BridgeOverlayMinDegree"`
 	BridgeOverlayMaxDegree int    `json:"BridgeOverlayMaxDegree"`
 	BridgeOverlaySeed      int64  `json:"BridgeOverlaySeed"`
@@ -154,6 +156,7 @@ func ReadConfigFile() {
 	ReconfigTimeGap = config.ReconfigTimeGap
 
 	BridgeOverlayEnabled = config.BridgeOverlayEnabled
+	BridgeOverlayBuildMode = config.BridgeOverlayBuildMode
 	if config.BridgeOverlayMinDegree > 0 {
 		BridgeOverlayMinDegree = config.BridgeOverlayMinDegree
 	}

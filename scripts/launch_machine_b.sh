@@ -83,6 +83,7 @@ def set_string(key, env_key):
 for key, env_key in (
     ("ConsensusMethod", "CONSENSUS_METHOD"),
     ("BridgeOverlayEnabled", "BRIDGE_OVERLAY_ENABLED"),
+    ("BridgeOverlayBuildMode", "BRIDGE_OVERLAY_BUILD_MODE"),
     ("BridgeOverlayMinDegree", "BRIDGE_OVERLAY_MIN_DEGREE"),
     ("BridgeOverlayMaxDegree", "BRIDGE_OVERLAY_MAX_DEGREE"),
     ("BridgeOverlaySeed", "BRIDGE_OVERLAY_SEED"),

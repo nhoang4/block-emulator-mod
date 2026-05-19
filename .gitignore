@@ -2,9 +2,12 @@
 # Do not upload your experimental results!
 expTest
 run_logs/
+run-linux-*/
 run-linux-local-*/
 run-linux-sparse-bridge-*/
 run-linux-broker-*/
+scaling-matrix-*/
+distributed-scaling-matrix-*/
 .codex-*/
 .codex-*
 .codex-tools/

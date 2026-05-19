@@ -306,7 +306,7 @@ func (bcm *BridgeCommitteeMod) initBridgeOverlay() {
 	bcm.overlayEpoch = 0
 	bcm.overlay = pcn.NewCompleteOverlay(shardNum)
 	bcm.nextTraffic = makeBridgeTrafficMatrix(shardNum)
-	bcm.sl.Slog.Printf("bridge overlay enabled: epoch %d starts with complete graph, degree limits %v\n", bcm.overlayEpoch, bcm.degreeLimits)
+	bcm.sl.Slog.Printf("bridge overlay enabled: epoch %d starts with complete graph, build mode %s, degree limits %v\n", bcm.overlayEpoch, bridgeOverlayBuildModeName(), bcm.degreeLimits)
 }
 
 func (bcm *BridgeCommitteeMod) bridgeRoute(sourceSID, destSID uint64) []uint64 {
@@ -329,7 +329,7 @@ func (bcm *BridgeCommitteeMod) recordBridgeTraffic(sourceSID, destSID uint64) {
 }
 
 func (bcm *BridgeCommitteeMod) rotateBridgeOverlay() {
-	nextOverlay, err := pcn.BuildOverlay(bcm.nextTraffic, bcm.degreeLimits)
+	nextOverlay, err := pcn.BuildOverlayWithMode(bcm.nextTraffic, bcm.degreeLimits, bridgeOverlayBuildMode())
 	if err != nil {
 		bcm.sl.Slog.Printf("bridge overlay build failed for epoch %d: %v; falling back to complete graph\n", bcm.overlayEpoch+1, err)
 		nextOverlay = pcn.NewCompleteOverlay(params.ShardNum)
@@ -337,8 +337,30 @@ func (bcm *BridgeCommitteeMod) rotateBridgeOverlay() {
 	bcm.overlayEpoch++
 	bcm.overlay = nextOverlay
 	bcm.nextTraffic = makeBridgeTrafficMatrix(params.ShardNum)
-	bcm.sl.Slog.Printf("bridge overlay epoch %d selected %d edges\n", bcm.overlayEpoch, len(bcm.overlay.Edges))
+	bcm.sl.Slog.Printf("bridge overlay epoch %d selected %d edges using %s mode\n", bcm.overlayEpoch, len(bcm.overlay.Edges), bridgeOverlayBuildModeName())
 	bcm.broadcastBridgeOverlay()
+}
+
+func bridgeOverlayBuildMode() pcn.OverlayBuildMode {
+	switch params.BridgeOverlayBuildMode {
+	case int(pcn.OverlayBuildTreeOnly):
+		return pcn.OverlayBuildTreeOnly
+	case int(pcn.OverlayBuildBinaryTree):
+		return pcn.OverlayBuildBinaryTree
+	default:
+		return pcn.OverlayBuildFull
+	}
+}
+
+func bridgeOverlayBuildModeName() string {
+	switch bridgeOverlayBuildMode() {
+	case pcn.OverlayBuildTreeOnly:
+		return "tree-only"
+	case pcn.OverlayBuildBinaryTree:
+		return "binary-tree"
+	default:
+		return "full"
+	}
 }
 
 func (bcm *BridgeCommitteeMod) broadcastBridgeOverlay() {

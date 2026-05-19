@@ -17,6 +17,14 @@ type Overlay struct {
 	Dist     [][]int
 }
 
+type OverlayBuildMode int
+
+const (
+	OverlayBuildFull OverlayBuildMode = iota
+	OverlayBuildTreeOnly
+	OverlayBuildBinaryTree
+)
+
 type weightedPair struct {
 	u uint64
 	v uint64
@@ -77,9 +85,34 @@ func NewCompleteOverlay(shardNum int) *Overlay {
 }
 
 func BuildOverlay(weights [][]int64, degreeLimits []int) (*Overlay, error) {
+	return BuildOverlayWithMode(weights, degreeLimits, OverlayBuildFull)
+}
+
+func BuildTreeOverlay(weights [][]int64, degreeLimits []int) (*Overlay, error) {
+	return BuildOverlayWithMode(weights, degreeLimits, OverlayBuildTreeOnly)
+}
+
+func BuildBinaryTreeOverlay(shardNum int) (*Overlay, error) {
+	if shardNum <= 0 {
+		return nil, errors.New("overlay requires at least one shard")
+	}
+	edges := make([]OverlayEdge, 0, shardNum-1)
+	for sid := uint64(1); sid < uint64(shardNum); sid++ {
+		edges = append(edges, OverlayEdge{
+			U: (sid - 1) / 2,
+			V: sid,
+		})
+	}
+	return newOverlay(uint64(shardNum), edges)
+}
+
+func BuildOverlayWithMode(weights [][]int64, degreeLimits []int, mode OverlayBuildMode) (*Overlay, error) {
 	n := uint64(len(degreeLimits))
 	if n == 0 {
 		return nil, errors.New("overlay requires at least one shard")
+	}
+	if mode == OverlayBuildBinaryTree {
+		return BuildBinaryTreeOverlay(int(n))
 	}
 	if len(weights) < int(n) {
 		return nil, errors.New("overlay weight matrix is smaller than shard count")
@@ -126,6 +159,13 @@ func BuildOverlay(weights [][]int64, degreeLimits []int) (*Overlay, error) {
 	overlay, err := newOverlay(n, edges)
 	if err != nil {
 		return nil, err
+	}
+
+	if mode == OverlayBuildTreeOnly {
+		return overlay, nil
+	}
+	if mode != OverlayBuildFull {
+		return nil, errors.New("unknown overlay build mode")
 	}
 
 	for {

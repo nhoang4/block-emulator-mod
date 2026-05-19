@@ -14,12 +14,13 @@ export NODES_IN_SHARD
 
 export CONSENSUS_METHOD=4
 export BRIDGE_OVERLAY_ENABLED=1
+export BRIDGE_OVERLAY_BUILD_MODE="${BRIDGE_OVERLAY_BUILD_MODE:-0}"
 export BRIDGE_OVERLAY_MIN_DEGREE="${BRIDGE_OVERLAY_MIN_DEGREE:-2}"
 export BRIDGE_OVERLAY_MAX_DEGREE="${BRIDGE_OVERLAY_MAX_DEGREE:-10}"
 export BRIDGE_OVERLAY_SEED="${BRIDGE_OVERLAY_SEED:-1}"
 export RUN_ROOT="${RUN_ROOT:-$REPO_ROOT/run-linux-sparse-bridge-${SHARD_NUM}x${NODES_IN_SHARD}-$(date +%Y%m%d-%H%M%S)}"
 
 echo "[sparse-bridge] ConsensusMethod=4 BridgeOverlayEnabled=1"
-echo "[sparse-bridge] degree range=${BRIDGE_OVERLAY_MIN_DEGREE}..${BRIDGE_OVERLAY_MAX_DEGREE} seed=${BRIDGE_OVERLAY_SEED}"
+echo "[sparse-bridge] build_mode=${BRIDGE_OVERLAY_BUILD_MODE} degree range=${BRIDGE_OVERLAY_MIN_DEGREE}..${BRIDGE_OVERLAY_MAX_DEGREE} seed=${BRIDGE_OVERLAY_SEED}"
 
 exec "$SCRIPT_DIR/run_linux_local.sh"

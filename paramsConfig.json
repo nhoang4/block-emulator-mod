@@ -17,6 +17,7 @@
   "DatasetFile": "./TxData/1000000to1999999_BlockTransaction.csv",
   "ReconfigTimeGap": 50,
   "BridgeOverlayEnabled": 0,
+  "BridgeOverlayBuildMode": 0,
   "BridgeOverlayMinDegree": 2,
   "BridgeOverlayMaxDegree": 10,
   "BridgeOverlaySeed": 1,
