@@ -13,8 +13,12 @@ set -u -o pipefail
 #
 # Example smoke run:
 #   MACHINE_A_IP=10.0.0.1 MACHINE_B_HOST=nh@10.0.0.2 MACHINE_C_HOST=nh@10.0.0.3 MACHINE_D_HOST=nh@10.0.0.4 \
-#   REPEATS=1 MODES="complete_bridge sparse_bridge binary_tree_bridge tree_bridge broker" \
+#   REPEATS=1 MODES="complete_bridge sparse_bridge binary_tree_bridge broker" \
 #   ./scripts/run_linux_distributed_matrix_a.sh
+#
+# Transaction-size sweep at fixed 16x10:
+#   SIZES=16 TOTAL_DATA_SIZES="100000 200000 400000 800000 1000000" \
+#   MODES="complete_bridge sparse_bridge binary_tree_bridge broker" ./scripts/run_linux_distributed_matrix_a.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -23,7 +27,8 @@ cd "$REPO_ROOT" || exit 1
 SIZES="${SIZES:-4 8 16 32 48 64}"
 NODES_IN_SHARD="${NODES_IN_SHARD:-10}"
 REPEATS="${REPEATS:-30}"
-MODES="${MODES:-complete_bridge sparse_bridge binary_tree_bridge tree_bridge broker}"
+MODES="${MODES:-complete_bridge sparse_bridge binary_tree_bridge broker}"
+TOTAL_DATA_SIZES="${TOTAL_DATA_SIZES:-}"
 MATRIX_ROOT="${MATRIX_ROOT:-$REPO_ROOT/distributed-scaling-matrix-$(date +%Y%m%d-%H%M%S)}"
 SUMMARY_CSV="${SUMMARY_CSV:-$MATRIX_ROOT/summary.csv}"
 STRICT="${STRICT:-0}"
@@ -156,7 +161,7 @@ mode_env() {
 
 optional_env() {
   local out=""
-  for name in BLOCK_INTERVAL_MS BLOCK_SIZE INJECT_SPEED TOTAL_DATA_SIZE TX_BATCH_SIZE DATASET_FILE BRIDGE_KEY_ROOT_DIR; do
+  for name in BLOCK_INTERVAL_MS BLOCK_SIZE INJECT_SPEED TX_BATCH_SIZE DATASET_FILE BRIDGE_KEY_ROOT_DIR; do
     if [[ -n "${!name:-}" ]]; then
       out+=" $name=$(q "${!name}")"
     fi
@@ -207,108 +212,135 @@ echo "[distributed-matrix] summary=$SUMMARY_CSV"
 echo "[distributed-matrix] sizes=$SIZES"
 echo "[distributed-matrix] nodes_in_shard=$NODES_IN_SHARD repeats=$REPEATS"
 echo "[distributed-matrix] modes=$MODES"
+if [[ -n "$TOTAL_DATA_SIZES" ]]; then
+  echo "[distributed-matrix] total_data_sizes=$TOTAL_DATA_SIZES"
+elif [[ -n "${TOTAL_DATA_SIZE:-}" ]]; then
+  echo "[distributed-matrix] total_data_size=$TOTAL_DATA_SIZE"
+fi
 echo "[distributed-matrix] A_IP=$MACHINE_A_IP B=$MACHINE_B_HOST C=$MACHINE_C_HOST D=$MACHINE_D_HOST"
 
 if [[ "$BUILD_FIRST" == "1" ]]; then
   build_all_once || exit $?
 fi
 
+data_size_values=()
+if [[ -n "$TOTAL_DATA_SIZES" ]]; then
+  # shellcheck disable=SC2206
+  data_size_values=($TOTAL_DATA_SIZES)
+elif [[ -n "${TOTAL_DATA_SIZE:-}" ]]; then
+  data_size_values=("$TOTAL_DATA_SIZE")
+else
+  data_size_values=("default")
+fi
+
 run_index=0
 for size in $SIZES; do
-  for mode in $MODES; do
-    envs="SHARD_NUM=$size NODES_IN_SHARD=$NODES_IN_SHARD PBFT_TIMEOUT_MS=${PBFT_TIMEOUT_MS:-300000} PBFT_START_DELAY_MS=${PBFT_START_DELAY_MS:-60000} READINESS_TIMEOUT_MS=${READINESS_TIMEOUT_MS:-300000} SUPERVISOR_START_MARGIN_MS=${SUPERVISOR_START_MARGIN_MS:-10000}"
-    mode_envs="$(mode_env "$mode")" || exit 2
-    envs="$envs $mode_envs$(optional_env)"
+  for data_size in "${data_size_values[@]}"; do
+    data_size_env=""
+    data_size_label=""
+    requested_total_data_size=""
+    if [[ "$data_size" != "default" ]]; then
+      data_size_env=" TOTAL_DATA_SIZE=$(q "$data_size")"
+      data_size_label="-tx${data_size}"
+      requested_total_data_size="$data_size"
+    fi
 
-    for repeat in $(seq 1 "$REPEATS"); do
-      run_index=$((run_index + 1))
-      run_name="${mode}-${size}x${NODES_IN_SHARD}-r$(printf "%02d" "$repeat")"
-      run_root="$MATRIX_ROOT/runs/$run_name"
-      started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-      mkdir -p "$run_root"
-      cp paramsConfig.json "$run_root/params-a.json"
+    for mode in $MODES; do
+      envs="SHARD_NUM=$size NODES_IN_SHARD=$NODES_IN_SHARD PBFT_TIMEOUT_MS=${PBFT_TIMEOUT_MS:-300000} PBFT_START_DELAY_MS=${PBFT_START_DELAY_MS:-60000} READINESS_TIMEOUT_MS=${READINESS_TIMEOUT_MS:-300000} SUPERVISOR_START_MARGIN_MS=${SUPERVISOR_START_MARGIN_MS:-10000}"
+      mode_envs="$(mode_env "$mode")" || exit 2
+      envs="$envs $mode_envs$(optional_env)$data_size_env"
 
-      remote_run_root_b="$REMOTE_MATRIX_ROOT_B/runs/$run_name"
-      remote_run_root_c="$REMOTE_MATRIX_ROOT_C/runs/$run_name"
-      remote_run_root_d="$REMOTE_MATRIX_ROOT_D/runs/$run_name"
+      for repeat in $(seq 1 "$REPEATS"); do
+        run_index=$((run_index + 1))
+        run_name="${mode}-${size}x${NODES_IN_SHARD}${data_size_label}-r$(printf "%02d" "$repeat")"
+        run_root="$MATRIX_ROOT/runs/$run_name"
+        started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        mkdir -p "$run_root"
+        cp paramsConfig.json "$run_root/params-a.json"
 
-      echo "[distributed-matrix] run=$run_index mode=$mode size=${size}x${NODES_IN_SHARD} repeat=$repeat"
+        remote_run_root_b="$REMOTE_MATRIX_ROOT_B/runs/$run_name"
+        remote_run_root_c="$REMOTE_MATRIX_ROOT_C/runs/$run_name"
+        remote_run_root_d="$REMOTE_MATRIX_ROOT_D/runs/$run_name"
 
-      if [[ "$KILL_EXISTING" == "1" ]]; then
-        cleanup_all
-        sleep 2
-      fi
+        echo "[distributed-matrix] run=$run_index mode=$mode size=${size}x${NODES_IN_SHARD} total_data_size=${requested_total_data_size:-default} repeat=$repeat"
 
-      configure_and_sync_iptable "$size" || exit $?
-      cp ipTable.json "$run_root/ipTable.used.json"
-
-      remote_prepare_run "$MACHINE_B_HOST" "$REMOTE_REPO_ROOT_B" "$remote_run_root_b" "b" || exit $?
-      remote_prepare_run "$MACHINE_C_HOST" "$REMOTE_REPO_ROOT_C" "$remote_run_root_c" "c" || exit $?
-      remote_prepare_run "$MACHINE_D_HOST" "$REMOTE_REPO_ROOT_D" "$remote_run_root_d" "d" || exit $?
-
-      remote_launch "$MACHINE_B_HOST" "$REMOTE_REPO_ROOT_B" "$remote_run_root_b" "b" "launch_four_machine_b.sh" "$envs"
-      b_pid=$!
-      remote_launch "$MACHINE_C_HOST" "$REMOTE_REPO_ROOT_C" "$remote_run_root_c" "c" "launch_four_machine_c.sh" "$envs"
-      c_pid=$!
-      remote_launch "$MACHINE_D_HOST" "$REMOTE_REPO_ROOT_D" "$remote_run_root_d" "d" "launch_four_machine_d.sh" "$envs"
-      d_pid=$!
-
-      sleep 2
-
-      a_ec=0
-      env $envs CONFIG_FILE="$run_root/params-a.json" LOG_ROOT="$run_root/machine-a" \
-        ./scripts/launch_four_machine_a.sh >"$run_root/machine-a.launch.out" 2>&1 &
-      a_pid=$!
-
-      deadline=$((SECONDS + WATCHDOG_SECONDS))
-      while kill -0 "$a_pid" 2>/dev/null; do
-        if ((SECONDS >= deadline)); then
-          echo "[distributed-matrix] watchdog timeout after ${WATCHDOG_SECONDS}s: $run_name" | tee -a "$run_root/machine-a.launch.out" >&2
-          kill "$a_pid" 2>/dev/null || true
+        if [[ "$KILL_EXISTING" == "1" ]]; then
           cleanup_all
-          a_ec=124
-          break
+          sleep 2
         fi
-        sleep 10
+
+        configure_and_sync_iptable "$size" || exit $?
+        cp ipTable.json "$run_root/ipTable.used.json"
+
+        remote_prepare_run "$MACHINE_B_HOST" "$REMOTE_REPO_ROOT_B" "$remote_run_root_b" "b" || exit $?
+        remote_prepare_run "$MACHINE_C_HOST" "$REMOTE_REPO_ROOT_C" "$remote_run_root_c" "c" || exit $?
+        remote_prepare_run "$MACHINE_D_HOST" "$REMOTE_REPO_ROOT_D" "$remote_run_root_d" "d" || exit $?
+
+        remote_launch "$MACHINE_B_HOST" "$REMOTE_REPO_ROOT_B" "$remote_run_root_b" "b" "launch_four_machine_b.sh" "$envs"
+        b_pid=$!
+        remote_launch "$MACHINE_C_HOST" "$REMOTE_REPO_ROOT_C" "$remote_run_root_c" "c" "launch_four_machine_c.sh" "$envs"
+        c_pid=$!
+        remote_launch "$MACHINE_D_HOST" "$REMOTE_REPO_ROOT_D" "$remote_run_root_d" "d" "launch_four_machine_d.sh" "$envs"
+        d_pid=$!
+
+        sleep 2
+
+        a_ec=0
+        env $envs CONFIG_FILE="$run_root/params-a.json" LOG_ROOT="$run_root/machine-a" \
+          ./scripts/launch_four_machine_a.sh >"$run_root/machine-a.launch.out" 2>&1 &
+        a_pid=$!
+
+        deadline=$((SECONDS + WATCHDOG_SECONDS))
+        while kill -0 "$a_pid" 2>/dev/null; do
+          if ((SECONDS >= deadline)); then
+            echo "[distributed-matrix] watchdog timeout after ${WATCHDOG_SECONDS}s: $run_name" | tee -a "$run_root/machine-a.launch.out" >&2
+            kill "$a_pid" 2>/dev/null || true
+            cleanup_all
+            a_ec=124
+            break
+          fi
+          sleep 10
+        done
+        if [[ "$a_ec" == "0" ]]; then
+          wait "$a_pid" || a_ec=$?
+        else
+          wait "$a_pid" 2>/dev/null || true
+        fi
+
+        b_ec=0
+        c_ec=0
+        d_ec=0
+        wait "$b_pid" || b_ec=$?
+        wait "$c_pid" || c_ec=$?
+        wait "$d_pid" || d_ec=$?
+
+        finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        status="ok"
+        if [[ "$a_ec" != "0" || "$b_ec" != "0" || "$c_ec" != "0" || "$d_ec" != "0" ]]; then
+          status="failed"
+        fi
+        exit_code="a=$a_ec;b=$b_ec;c=$c_ec;d=$d_ec"
+
+        "$SCRIPT_DIR/summarize_experiment_run.py" \
+          --run-root "$run_root" \
+          --mode "$mode" \
+          --shard-num "$size" \
+          --nodes-in-shard "$NODES_IN_SHARD" \
+          --repeat "$repeat" \
+          --requested-total-data-size "$requested_total_data_size" \
+          --status "$status" \
+          --exit-code "$exit_code" \
+          --started-at "$started_at" \
+          --finished-at "$finished_at" \
+          --out "$SUMMARY_CSV"
+
+        if [[ "$status" != "ok" ]]; then
+          echo "[distributed-matrix] failed $run_name exit_code=$exit_code" >&2
+          if [[ "$STRICT" == "1" ]]; then
+            exit 1
+          fi
+        fi
       done
-      if [[ "$a_ec" == "0" ]]; then
-        wait "$a_pid" || a_ec=$?
-      else
-        wait "$a_pid" 2>/dev/null || true
-      fi
-
-      b_ec=0
-      c_ec=0
-      d_ec=0
-      wait "$b_pid" || b_ec=$?
-      wait "$c_pid" || c_ec=$?
-      wait "$d_pid" || d_ec=$?
-
-      finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-      status="ok"
-      if [[ "$a_ec" != "0" || "$b_ec" != "0" || "$c_ec" != "0" || "$d_ec" != "0" ]]; then
-        status="failed"
-      fi
-      exit_code="a=$a_ec;b=$b_ec;c=$c_ec;d=$d_ec"
-
-      "$SCRIPT_DIR/summarize_experiment_run.py" \
-        --run-root "$run_root" \
-        --mode "$mode" \
-        --shard-num "$size" \
-        --nodes-in-shard "$NODES_IN_SHARD" \
-        --repeat "$repeat" \
-        --status "$status" \
-        --exit-code "$exit_code" \
-        --started-at "$started_at" \
-        --finished-at "$finished_at" \
-        --out "$SUMMARY_CSV"
-
-      if [[ "$status" != "ok" ]]; then
-        echo "[distributed-matrix] failed $run_name exit_code=$exit_code" >&2
-        if [[ "$STRICT" == "1" ]]; then
-          exit 1
-        fi
-      fi
     done
   done
 done
