@@ -111,18 +111,22 @@ for size in $SIZES; do
           build_flag=1
         fi
 
-        total_data_env=()
         if [[ -n "$requested_total_data_size" ]]; then
-          total_data_env=(TOTAL_DATA_SIZE="$requested_total_data_size")
-        fi
-
-        env "${total_data_env[@]}" \
+          TOTAL_DATA_SIZE="$requested_total_data_size" \
+            SHARD_NUM="$size" \
+            NODES_IN_SHARD="$NODES_IN_SHARD" \
+            RUN_ROOT="$run_root" \
+            BUILD="$build_flag" \
+            WATCHDOG_SECONDS="$WATCHDOG_SECONDS" \
+            "$script" >"$log_path" 2>&1
+        else
           SHARD_NUM="$size" \
-          NODES_IN_SHARD="$NODES_IN_SHARD" \
-          RUN_ROOT="$run_root" \
-          BUILD="$build_flag" \
-          WATCHDOG_SECONDS="$WATCHDOG_SECONDS" \
-          "$script" >"$log_path" 2>&1
+            NODES_IN_SHARD="$NODES_IN_SHARD" \
+            RUN_ROOT="$run_root" \
+            BUILD="$build_flag" \
+            WATCHDOG_SECONDS="$WATCHDOG_SECONDS" \
+            "$script" >"$log_path" 2>&1
+        fi
         ec=$?
         finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
