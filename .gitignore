@@ -8,6 +8,7 @@ run-linux-sparse-bridge-*/
 run-linux-broker-*/
 scaling-matrix-*/
 distributed-scaling-matrix-*/
+distributed-full-experiment-*/
 txsize-*/
 .codex-*/
 .codex-*
