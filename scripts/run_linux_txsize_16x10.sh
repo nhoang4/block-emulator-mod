@@ -47,9 +47,15 @@ if [[ "$AUTO_PUSH_RESULTS" == "1" ]]; then
   if git -C "$REPO_ROOT" diff --cached --quiet -- "$result_copy"; then
     echo "[txsize-16x10-local] result summary unchanged; skipping commit"
   else
-    git -C "$REPO_ROOT" commit -m "Add txsize 16x10 results $run_id"
-    git -C "$REPO_ROOT" push "$RESULTS_REMOTE" "$RESULTS_BRANCH"
-    echo "[txsize-16x10-local] pushed result summary: $result_copy"
+    if git -C "$REPO_ROOT" commit -m "Add txsize 16x10 results $run_id"; then
+      if git -C "$REPO_ROOT" push "$RESULTS_REMOTE" "$RESULTS_BRANCH"; then
+        echo "[txsize-16x10-local] pushed result summary: $result_copy"
+      else
+        echo "[txsize-16x10-local] push failed; result summary remains committed locally: $result_copy" >&2
+      fi
+    else
+      echo "[txsize-16x10-local] commit failed; result summary remains on disk: $result_copy" >&2
+    fi
   fi
 else
   echo "[txsize-16x10-local] summary: $summary"
