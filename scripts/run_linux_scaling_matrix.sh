@@ -32,11 +32,17 @@ SUMMARY_CSV="${SUMMARY_CSV:-$MATRIX_ROOT/summary.csv}"
 STRICT="${STRICT:-0}"
 BUILD_FIRST="${BUILD_FIRST:-1}"
 WATCHDOG_SECONDS="${WATCHDOG_SECONDS:-3600}"
+RETRY_FAILED_RUNS="${RETRY_FAILED_RUNS:-1}"
+MAX_ATTEMPTS_PER_REPEAT="${MAX_ATTEMPTS_PER_REPEAT:-3}"
 AUTO_PUSH_RESULTS="${AUTO_PUSH_RESULTS:-0}"
 RESULTS_DIR="${RESULTS_DIR:-$REPO_ROOT/results/scaling-matrix}"
 RESULTS_REMOTE="${RESULTS_REMOTE:-origin}"
 RESULTS_BRANCH="${RESULTS_BRANCH:-$(git -C "$REPO_ROOT" branch --show-current 2>/dev/null || echo main)}"
 RESULTS_LABEL="${RESULTS_LABEL:-$(basename "$MATRIX_ROOT")}"
+
+if [[ "$RETRY_FAILED_RUNS" != "1" ]]; then
+  MAX_ATTEMPTS_PER_REPEAT=1
+fi
 
 mkdir -p "$MATRIX_ROOT/runs"
 
@@ -45,6 +51,7 @@ echo "[matrix] summary=$SUMMARY_CSV"
 echo "[matrix] sizes=$SIZES"
 echo "[matrix] nodes_in_shard=$NODES_IN_SHARD repeats=$REPEATS"
 echo "[matrix] modes=$MODES"
+echo "[matrix] retry_failed_runs=$RETRY_FAILED_RUNS max_attempts_per_repeat=$MAX_ATTEMPTS_PER_REPEAT"
 if [[ -n "$TOTAL_DATA_SIZES" ]]; then
   echo "[matrix] total_data_sizes=$TOTAL_DATA_SIZES"
 elif [[ -n "${TOTAL_DATA_SIZE:-}" ]]; then
@@ -134,62 +141,82 @@ for size in $SIZES; do
     for mode in $MODES; do
       script="$(mode_script "$mode")" || exit 2
       for repeat in $(seq 1 "$REPEATS"); do
-        run_index=$((run_index + 1))
-        run_root="$MATRIX_ROOT/runs/${mode}-${size}x${NODES_IN_SHARD}${data_size_label}-r$(printf "%02d" "$repeat")"
-        started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        log_path="$run_root.runner.out"
-        mkdir -p "$(dirname "$run_root")"
+        attempt=1
+        repeat_ok=0
+        while ((attempt <= MAX_ATTEMPTS_PER_REPEAT)); do
+          run_index=$((run_index + 1))
+          attempt_suffix=""
+          if ((attempt > 1)); then
+            attempt_suffix="-a$(printf "%02d" "$attempt")"
+          fi
+          run_root="$MATRIX_ROOT/runs/${mode}-${size}x${NODES_IN_SHARD}${data_size_label}-r$(printf "%02d" "$repeat")${attempt_suffix}"
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          log_path="$run_root.runner.out"
+          mkdir -p "$(dirname "$run_root")"
 
-        echo "[matrix] run=$run_index mode=$mode size=${size}x${NODES_IN_SHARD} total_data_size=${requested_total_data_size:-default} repeat=$repeat root=$run_root"
+          echo "[matrix] run=$run_index mode=$mode size=${size}x${NODES_IN_SHARD} total_data_size=${requested_total_data_size:-default} repeat=$repeat attempt=$attempt/$MAX_ATTEMPTS_PER_REPEAT root=$run_root"
 
-        run_mode_env "$mode"
-        build_flag=0
-        if [[ "$BUILD_FIRST" == "1" && "$run_index" == "1" ]]; then
-          build_flag=1
-        fi
+          run_mode_env "$mode"
+          build_flag=0
+          if [[ "$BUILD_FIRST" == "1" && "$run_index" == "1" ]]; then
+            build_flag=1
+          fi
 
-        if [[ -n "$requested_total_data_size" ]]; then
-          TOTAL_DATA_SIZE="$requested_total_data_size" \
+          if [[ -n "$requested_total_data_size" ]]; then
+            TOTAL_DATA_SIZE="$requested_total_data_size" \
+              SHARD_NUM="$size" \
+              NODES_IN_SHARD="$NODES_IN_SHARD" \
+              RUN_ROOT="$run_root" \
+              BUILD="$build_flag" \
+              WATCHDOG_SECONDS="$WATCHDOG_SECONDS" \
+              "$script" >"$log_path" 2>&1
+          else
             SHARD_NUM="$size" \
-            NODES_IN_SHARD="$NODES_IN_SHARD" \
-            RUN_ROOT="$run_root" \
-            BUILD="$build_flag" \
-            WATCHDOG_SECONDS="$WATCHDOG_SECONDS" \
-            "$script" >"$log_path" 2>&1
-        else
-          SHARD_NUM="$size" \
-            NODES_IN_SHARD="$NODES_IN_SHARD" \
-            RUN_ROOT="$run_root" \
-            BUILD="$build_flag" \
-            WATCHDOG_SECONDS="$WATCHDOG_SECONDS" \
-            "$script" >"$log_path" 2>&1
-        fi
-        ec=$?
-        finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              NODES_IN_SHARD="$NODES_IN_SHARD" \
+              RUN_ROOT="$run_root" \
+              BUILD="$build_flag" \
+              WATCHDOG_SECONDS="$WATCHDOG_SECONDS" \
+              "$script" >"$log_path" 2>&1
+          fi
+          ec=$?
+          finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-        status="ok"
-        if [[ "$ec" != "0" ]]; then
-          status="failed"
-        fi
+          status="ok"
+          if [[ "$ec" != "0" ]]; then
+            status="failed"
+          fi
 
-        "$SCRIPT_DIR/summarize_experiment_run.py" \
-          --run-root "$run_root" \
-          --mode "$mode" \
-          --shard-num "$size" \
-          --nodes-in-shard "$NODES_IN_SHARD" \
-          --repeat "$repeat" \
-          --requested-total-data-size "$requested_total_data_size" \
-          --status "$status" \
-          --exit-code "$ec" \
-          --started-at "$started_at" \
-          --finished-at "$finished_at" \
-          --out "$SUMMARY_CSV"
+          "$SCRIPT_DIR/summarize_experiment_run.py" \
+            --run-root "$run_root" \
+            --mode "$mode" \
+            --shard-num "$size" \
+            --nodes-in-shard "$NODES_IN_SHARD" \
+            --repeat "$repeat" \
+            --attempt "$attempt" \
+            --requested-total-data-size "$requested_total_data_size" \
+            --status "$status" \
+            --exit-code "$ec" \
+            --started-at "$started_at" \
+            --finished-at "$finished_at" \
+            --out "$SUMMARY_CSV"
 
-        if [[ "$ec" != "0" ]]; then
-          echo "[matrix] failed mode=$mode size=${size}x${NODES_IN_SHARD} total_data_size=${requested_total_data_size:-default} repeat=$repeat; see $log_path" >&2
+          if [[ "$ec" == "0" ]]; then
+            repeat_ok=1
+            break
+          fi
+
+          echo "[matrix] failed mode=$mode size=${size}x${NODES_IN_SHARD} total_data_size=${requested_total_data_size:-default} repeat=$repeat attempt=$attempt; see $log_path" >&2
           if [[ "$STRICT" == "1" ]]; then
             exit "$ec"
           fi
+          if ((attempt >= MAX_ATTEMPTS_PER_REPEAT)); then
+            break
+          fi
+          attempt=$((attempt + 1))
+          echo "[matrix] retrying repeat=$repeat attempt=$attempt/$MAX_ATTEMPTS_PER_REPEAT"
+        done
+        if [[ "$repeat_ok" != "1" ]]; then
+          echo "[matrix] exhausted attempts for mode=$mode size=${size}x${NODES_IN_SHARD} total_data_size=${requested_total_data_size:-default} repeat=$repeat" >&2
         fi
       done
       checkpoint_results "${mode}-${size}x${NODES_IN_SHARD}${data_size_label}"

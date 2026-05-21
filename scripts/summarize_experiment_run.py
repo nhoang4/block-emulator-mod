@@ -13,6 +13,7 @@ FIELDS = [
     "shard_num",
     "nodes_in_shard",
     "repeat",
+    "attempt",
     "requested_total_data_size",
     "status",
     "exit_code",
@@ -130,6 +131,7 @@ def summarize(args):
         "shard_num": args.shard_num,
         "nodes_in_shard": args.nodes_in_shard,
         "repeat": args.repeat,
+        "attempt": args.attempt,
         "requested_total_data_size": args.requested_total_data_size,
         "status": status,
         "exit_code": args.exit_code,
@@ -169,6 +171,7 @@ def main():
     parser.add_argument("--shard-num", required=True)
     parser.add_argument("--nodes-in-shard", required=True)
     parser.add_argument("--repeat", required=True)
+    parser.add_argument("--attempt", default="1")
     parser.add_argument("--requested-total-data-size", default="")
     parser.add_argument("--status", required=True)
     parser.add_argument("--exit-code", required=True)
