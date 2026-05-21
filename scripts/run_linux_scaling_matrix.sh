@@ -32,6 +32,11 @@ SUMMARY_CSV="${SUMMARY_CSV:-$MATRIX_ROOT/summary.csv}"
 STRICT="${STRICT:-0}"
 BUILD_FIRST="${BUILD_FIRST:-1}"
 WATCHDOG_SECONDS="${WATCHDOG_SECONDS:-3600}"
+AUTO_PUSH_RESULTS="${AUTO_PUSH_RESULTS:-0}"
+RESULTS_DIR="${RESULTS_DIR:-$REPO_ROOT/results/scaling-matrix}"
+RESULTS_REMOTE="${RESULTS_REMOTE:-origin}"
+RESULTS_BRANCH="${RESULTS_BRANCH:-$(git -C "$REPO_ROOT" branch --show-current 2>/dev/null || echo main)}"
+RESULTS_LABEL="${RESULTS_LABEL:-$(basename "$MATRIX_ROOT")}"
 
 mkdir -p "$MATRIX_ROOT/runs"
 
@@ -45,6 +50,38 @@ if [[ -n "$TOTAL_DATA_SIZES" ]]; then
 elif [[ -n "${TOTAL_DATA_SIZE:-}" ]]; then
   echo "[matrix] total_data_size=$TOTAL_DATA_SIZE"
 fi
+echo "[matrix] auto_push_results=$AUTO_PUSH_RESULTS"
+
+checkpoint_results() {
+  local checkpoint_name="$1"
+  if [[ "$AUTO_PUSH_RESULTS" != "1" ]]; then
+    return 0
+  fi
+  if [[ ! -f "$SUMMARY_CSV" ]]; then
+    echo "[matrix] checkpoint skipped; summary missing: $SUMMARY_CSV" >&2
+    return 0
+  fi
+
+  mkdir -p "$RESULTS_DIR"
+  local result_copy="$RESULTS_DIR/${RESULTS_LABEL}-summary.csv"
+  cp "$SUMMARY_CSV" "$result_copy"
+
+  git -C "$REPO_ROOT" add "$result_copy"
+  if git -C "$REPO_ROOT" diff --cached --quiet -- "$result_copy"; then
+    echo "[matrix] checkpoint unchanged: $checkpoint_name"
+    return 0
+  fi
+
+  if git -C "$REPO_ROOT" commit -m "Checkpoint results $RESULTS_LABEL $checkpoint_name" -- "$result_copy"; then
+    if git -C "$REPO_ROOT" push "$RESULTS_REMOTE" "$RESULTS_BRANCH"; then
+      echo "[matrix] checkpoint pushed: $checkpoint_name -> $result_copy"
+    else
+      echo "[matrix] checkpoint push failed; result committed locally: $result_copy" >&2
+    fi
+  else
+    echo "[matrix] checkpoint commit failed; summary remains at: $SUMMARY_CSV" >&2
+  fi
+}
 
 mode_script() {
   case "$1" in
@@ -155,6 +192,7 @@ for size in $SIZES; do
           fi
         fi
       done
+      checkpoint_results "${mode}-${size}x${NODES_IN_SHARD}${data_size_label}"
     done
   done
 done
