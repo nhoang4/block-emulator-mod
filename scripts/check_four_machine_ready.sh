@@ -39,6 +39,10 @@ echo "[preflight] Machine A repo: $REPO_ROOT"
 echo "[preflight] Machine A IP: $MACHINE_A_IP"
 echo "[preflight] dataset: $DATASET_FILE"
 
+check_go_version_cmd='export PATH="$HOME/go/bin:$HOME/.local/bin:$PATH" GOPATH="${GOPATH:-$HOME/gopath}"; go_version="$(go version | awk '"'"'{print $3}'"'"' | sed '"'"'s/^go//'"'"')"; major="${go_version%%.*}"; rest="${go_version#*.}"; minor="${rest%%.*}"; if [ "$major" -gt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -ge 19 ]; }; then go version; else echo "Go 1.19+ required, found $(go version)" >&2; exit 3; fi'
+
+eval "$check_go_version_cmd" >/dev/null
+
 check_remote() {
   local label="$1"
   local host="$2"
@@ -49,12 +53,11 @@ check_remote() {
   echo "[preflight] checking Machine $label: $host repo=$repo"
   # shellcheck disable=SC2086
   ssh $SSH_OPTS "$host" "cd '$repo' && \
+    $check_go_version_cmd && \
     test -x ./scripts/launch_four_machine_${script_suffix}.sh && \
     test -x ./scripts/launch_machine_b.sh && \
     test -x ./scripts/summarize_experiment_run.py && \
     test -f '$DATASET_FILE' && \
-    command -v go >/dev/null && \
-    go version >/dev/null && \
     echo ok"
 }
 

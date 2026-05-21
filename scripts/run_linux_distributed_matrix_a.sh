@@ -196,14 +196,14 @@ remote_launch() {
 
 build_all_once() {
   echo "[distributed-matrix] building local binary"
-  go build -o block-emulator-mod . || return $?
+  PATH="$HOME/go/bin:$HOME/.local/bin:$PATH" GOPATH="${GOPATH:-$HOME/gopath}" go build -o block-emulator-mod . || return $?
   for spec in \
     "$MACHINE_B_HOST|$REMOTE_REPO_ROOT_B|B" \
     "$MACHINE_C_HOST|$REMOTE_REPO_ROOT_C|C" \
     "$MACHINE_D_HOST|$REMOTE_REPO_ROOT_D|D"; do
     IFS='|' read -r host repo name <<<"$spec"
     echo "[distributed-matrix] building remote machine $name: $host"
-    ssh_remote "$host" "cd $(q "$repo") && go build -o block-emulator-mod ." || return $?
+    ssh_remote "$host" "cd $(q "$repo") && export PATH=\"\$HOME/go/bin:\$HOME/.local/bin:\$PATH\" GOPATH=\"\${GOPATH:-\$HOME/gopath}\" && go version && go build -o block-emulator-mod ." || return $?
   done
 }
 
