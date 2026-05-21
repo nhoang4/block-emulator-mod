@@ -9,8 +9,8 @@ set -euo pipefail
 # Phase 2: transaction-size scaling at fixed 16x10
 #   transaction sizes: 1, 2, 4, 8, 10 x 100000
 #
-# Both phases write to the same summary.csv. By default this wrapper checkpoints
-# and pushes the summary after each 30-run parameter block.
+# Both phases write to the same summary.csv. By default this wrapper copies a
+# checkpoint summary after each 30-run parameter block, but does not commit/push.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -20,7 +20,9 @@ export REPEATS="${REPEATS:-30}"
 export MODES="${MODES:-complete_bridge sparse_bridge binary_tree_bridge broker}"
 export MATRIX_ROOT="${MATRIX_ROOT:-$REPO_ROOT/local-full-experiment-$(date +%Y%m%d-%H%M%S)}"
 export SUMMARY_CSV="${SUMMARY_CSV:-$MATRIX_ROOT/summary.csv}"
-export AUTO_PUSH_RESULTS="${AUTO_PUSH_RESULTS:-1}"
+export CHECKPOINT_RESULTS="${CHECKPOINT_RESULTS:-1}"
+export AUTO_PUSH_RESULTS="${AUTO_PUSH_RESULTS:-0}"
+export AUTO_COMMIT_RESULTS="${AUTO_COMMIT_RESULTS:-$AUTO_PUSH_RESULTS}"
 export RETRY_FAILED_RUNS="${RETRY_FAILED_RUNS:-1}"
 export MAX_ATTEMPTS_PER_REPEAT="${MAX_ATTEMPTS_PER_REPEAT:-3}"
 
@@ -38,7 +40,7 @@ echo "[local-full] summary=$SUMMARY_CSV"
 echo "[local-full] modes=$MODES"
 echo "[local-full] repeats=$REPEATS nodes_in_shard=$NODES_IN_SHARD"
 echo "[local-full] retry_failed_runs=$RETRY_FAILED_RUNS max_attempts_per_repeat=$MAX_ATTEMPTS_PER_REPEAT"
-echo "[local-full] auto_push_results=$AUTO_PUSH_RESULTS"
+echo "[local-full] checkpoint_results=$CHECKPOINT_RESULTS auto_commit_results=$AUTO_COMMIT_RESULTS"
 
 echo "[local-full] phase 1/2: network-size scaling, sizes=$NETWORK_SIZES"
 SIZES="$NETWORK_SIZES" \

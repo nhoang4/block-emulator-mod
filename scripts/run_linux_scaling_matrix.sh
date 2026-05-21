@@ -35,6 +35,8 @@ WATCHDOG_SECONDS="${WATCHDOG_SECONDS:-3600}"
 RETRY_FAILED_RUNS="${RETRY_FAILED_RUNS:-1}"
 MAX_ATTEMPTS_PER_REPEAT="${MAX_ATTEMPTS_PER_REPEAT:-3}"
 AUTO_PUSH_RESULTS="${AUTO_PUSH_RESULTS:-0}"
+CHECKPOINT_RESULTS="${CHECKPOINT_RESULTS:-$AUTO_PUSH_RESULTS}"
+AUTO_COMMIT_RESULTS="${AUTO_COMMIT_RESULTS:-$AUTO_PUSH_RESULTS}"
 RESULTS_DIR="${RESULTS_DIR:-$REPO_ROOT/results/scaling-matrix}"
 RESULTS_REMOTE="${RESULTS_REMOTE:-origin}"
 RESULTS_BRANCH="${RESULTS_BRANCH:-$(git -C "$REPO_ROOT" branch --show-current 2>/dev/null || echo main)}"
@@ -57,11 +59,11 @@ if [[ -n "$TOTAL_DATA_SIZES" ]]; then
 elif [[ -n "${TOTAL_DATA_SIZE:-}" ]]; then
   echo "[matrix] total_data_size=$TOTAL_DATA_SIZE"
 fi
-echo "[matrix] auto_push_results=$AUTO_PUSH_RESULTS"
+echo "[matrix] checkpoint_results=$CHECKPOINT_RESULTS auto_commit_results=$AUTO_COMMIT_RESULTS"
 
 checkpoint_results() {
   local checkpoint_name="$1"
-  if [[ "$AUTO_PUSH_RESULTS" != "1" ]]; then
+  if [[ "$CHECKPOINT_RESULTS" != "1" ]]; then
     return 0
   fi
   if [[ ! -f "$SUMMARY_CSV" ]]; then
@@ -72,6 +74,11 @@ checkpoint_results() {
   mkdir -p "$RESULTS_DIR"
   local result_copy="$RESULTS_DIR/${RESULTS_LABEL}-summary.csv"
   cp "$SUMMARY_CSV" "$result_copy"
+
+  if [[ "$AUTO_COMMIT_RESULTS" != "1" ]]; then
+    echo "[matrix] checkpoint copied: $checkpoint_name -> $result_copy"
+    return 0
+  fi
 
   git -C "$REPO_ROOT" add "$result_copy"
   if git -C "$REPO_ROOT" diff --cached --quiet -- "$result_copy"; then
