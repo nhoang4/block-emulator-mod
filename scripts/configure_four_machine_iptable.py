@@ -13,7 +13,7 @@ from pathlib import Path
 SUPERVISOR_SHARD = "2147483647"
 
 
-def shard_range(shard_num: int, worker_index: int, worker_count: int = 4) -> tuple[int, int]:
+def shard_range(shard_num, worker_index, worker_count=4):
     start = worker_index * shard_num // worker_count
     end = (worker_index + 1) * shard_num // worker_count - 1
     return start, end
