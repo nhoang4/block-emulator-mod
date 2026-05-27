@@ -127,15 +127,18 @@ func (rbhm *RawBridgePbftExtraHandleMod) handleBridgeLeaderCommit(r *message.Req
 		return false
 	}
 
-	for sid := uint64(0); sid < rbhm.pbftNode.pbftChainConfig.ShardNums; sid++ {
-		if sid == rbhm.pbftNode.ShardID {
+	for sid, tx2s := range tx2sSend {
+		if sid == rbhm.pbftNode.ShardID || len(tx2s) == 0 {
 			continue
 		}
+		values := map[uint64]*big.Int{
+			sid: new(big.Int).Set(outgoingValues[sid]),
+		}
 		sii := message.SeqIDinfo{
-			Tx2s:          tx2sSend[sid],
+			Tx2s:          tx2s,
 			SenderShardID: rbhm.pbftNode.ShardID,
 			SenderSeq:     rbhm.pbftNode.sequenceID,
-			Values:        outgoingValues,
+			Values:        values,
 			JointSig:      rbhm.pbftNode.bridgeJointSig,
 			SenderNode:    rbhm.pbftNode.RunningNode,
 		}
@@ -144,7 +147,7 @@ func (rbhm *RawBridgePbftExtraHandleMod) handleBridgeLeaderCommit(r *message.Req
 			log.Panic()
 		}
 		msgSend := message.MergeMessage(message.CSeqIDinfo, sByte)
-		go networks.TcpDial(msgSend, rbhm.pbftNode.ip_nodeTable[sid][0])
+		networks.TcpDial(msgSend, rbhm.pbftNode.ip_nodeTable[sid][0])
 	}
 
 	bim := message.BlockInfoMsg{
