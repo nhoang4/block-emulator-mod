@@ -1,13 +1,13 @@
 #!/bin/bash
 #SBATCH -A 2605251931
-#SBATCH --job-name=be-full-36c64g
+#SBATCH --job-name=be-full-36c80g
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=36
-#SBATCH --mem=64G
+#SBATCH --mem=80G
 #SBATCH --time=72:00:00
-#SBATCH -o wendian-full-36c64g-%j.out
-#SBATCH -e wendian-full-36c64g-%j.err
+#SBATCH -o wendian-full-36c80g-%j.out
+#SBATCH -e wendian-full-36c80g-%j.err
 #SBATCH --export=ALL
 
 set -euo pipefail
@@ -29,7 +29,7 @@ export MAX_ATTEMPTS_PER_REPEAT="${MAX_ATTEMPTS_PER_REPEAT:-5}"
 export CHECKPOINT_RESULTS="${CHECKPOINT_RESULTS:-1}"
 export AUTO_COMMIT_RESULTS="${AUTO_COMMIT_RESULTS:-0}"
 export AUTO_PUSH_RESULTS="${AUTO_PUSH_RESULTS:-0}"
-export RESULTS_DIR="${RESULTS_DIR:-/scratch/nhan_hoang/block-emulator-results/full-36c64g}"
+export RESULTS_DIR="${RESULTS_DIR:-/scratch/nhan_hoang/block-emulator-results/full-36c80g}"
 
 go build -o block-emulator-mod .
 BUILD_FIRST=0 ./scripts/run_linux_local_full_experiment.sh
