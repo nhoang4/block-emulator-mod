@@ -67,7 +67,7 @@ def parse_channels(run_root, mode, shard_num):
     complete = shard_num * (shard_num - 1) // 2
     if mode == "complete_bridge":
         return complete, Decimal(complete), complete, complete, 1, "complete"
-    if mode == "broker":
+    if mode in {"broker", "monoxide", "relay"}:
         return "", "", "", "", 0, "n/a"
 
     supervisor = run_root / "machine-a" / "supervisor.out"

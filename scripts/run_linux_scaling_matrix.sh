@@ -104,6 +104,7 @@ mode_script() {
     tree_bridge) echo "$SCRIPT_DIR/run_linux_tree_bridge.sh" ;;
     binary_tree_bridge) echo "$SCRIPT_DIR/run_linux_binary_tree_bridge.sh" ;;
     broker) echo "$SCRIPT_DIR/run_linux_broker.sh" ;;
+    monoxide | relay) echo "$SCRIPT_DIR/run_linux_monoxide.sh" ;;
     *)
       echo "[matrix] unknown mode: $1" >&2
       return 2
