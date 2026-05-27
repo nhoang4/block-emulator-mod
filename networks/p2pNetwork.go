@@ -51,29 +51,39 @@ func InitNetworkTools() {
 }
 
 func TcpDial(context []byte, addr string) {
+	go func() {
+		if err := TcpDialSync(context, addr, tcpDialAttempts); err != nil {
+			log.Printf("TcpDial failed to %s after %d attempts: %v\n", addr, tcpDialAttempts, err)
+		}
+	}()
+}
+
+func TcpDialSync(context []byte, addr string, attempts int) error {
+	if attempts < 1 {
+		attempts = 1
+	}
+
 	connMsg := make([]byte, 0, len(context)+1)
 	connMsg = append(connMsg, context...)
 	connMsg = append(connMsg, '\n')
 
-	go func() {
-		// simulate the delay
-		thisDelay := params.Delay
-		if params.JitterRange != 0 {
-			thisDelay = randomDelayGenerator.Intn(params.JitterRange) - params.JitterRange/2 + params.Delay
-		}
-		time.Sleep(time.Millisecond * time.Duration(thisDelay))
+	// simulate the delay
+	thisDelay := params.Delay
+	if params.JitterRange != 0 {
+		thisDelay = randomDelayGenerator.Intn(params.JitterRange) - params.JitterRange/2 + params.Delay
+	}
+	time.Sleep(time.Millisecond * time.Duration(thisDelay))
 
-		var lastErr error
-		for attempt := 1; attempt <= tcpDialAttempts; attempt++ {
-			if err := tcpDialOnce(connMsg, addr); err != nil {
-				lastErr = err
-				time.Sleep(time.Duration(attempt) * tcpDialBackoff)
-				continue
-			}
-			return
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if err := tcpDialOnce(connMsg, addr); err != nil {
+			lastErr = err
+			time.Sleep(time.Duration(attempt) * tcpDialBackoff)
+			continue
 		}
-		log.Printf("TcpDial failed to %s after %d attempts: %v\n", addr, tcpDialAttempts, lastErr)
-	}()
+		return nil
+	}
+	return lastErr
 }
 
 func tcpDialOnce(connMsg []byte, addr string) error {

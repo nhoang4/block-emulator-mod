@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+const bridgeForwardSendAttempts = 30
+
 type RawBridgePbftExtraHandleMod struct {
 	pbftNode *PbftConsensusNode
 }
@@ -147,7 +149,10 @@ func (rbhm *RawBridgePbftExtraHandleMod) handleBridgeLeaderCommit(r *message.Req
 			log.Panic()
 		}
 		msgSend := message.MergeMessage(message.CSeqIDinfo, sByte)
-		networks.TcpDial(msgSend, rbhm.pbftNode.ip_nodeTable[sid][0])
+		if err := networks.TcpDialSync(msgSend, rbhm.pbftNode.ip_nodeTable[sid][0], bridgeForwardSendAttempts); err != nil {
+			rbhm.pbftNode.pl.Plog.Printf("S%dN%d : failed to forward %d bridge txs to shard %d after %d attempts: %v\n",
+				rbhm.pbftNode.ShardID, rbhm.pbftNode.NodeID, len(tx2s), sid, bridgeForwardSendAttempts, err)
+		}
 	}
 
 	bim := message.BlockInfoMsg{

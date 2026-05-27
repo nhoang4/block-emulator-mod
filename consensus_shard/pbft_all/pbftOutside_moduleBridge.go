@@ -2,6 +2,7 @@ package pbft_all
 
 import (
 	"blockEmulator/message"
+	"blockEmulator/networks"
 	"encoding/json"
 	"log"
 	"math/big"
@@ -46,6 +47,23 @@ func (rbom *RawBridgeOutsideModule) handleSeqIDinfos(content []byte) {
 	err := json.Unmarshal(content, sii)
 	if err != nil {
 		log.Panic(err)
+	}
+
+	leaderID := uint64(rbom.pbftNode.view.Load())
+	if leaderID != rbom.pbftNode.NodeID {
+		if shardNodes, ok := rbom.pbftNode.ip_nodeTable[rbom.pbftNode.ShardID]; ok {
+			if leaderAddr, ok := shardNodes[leaderID]; ok && leaderAddr != "" {
+				msgSend := message.MergeMessage(message.CSeqIDinfo, content)
+				if err := networks.TcpDialSync(msgSend, leaderAddr, bridgeForwardSendAttempts); err != nil {
+					rbom.pbftNode.pl.Plog.Printf("S%dN%d : failed to redirect Bridge SeqIDinfo from shard %d to leader node %d after %d attempts: %v\n",
+						rbom.pbftNode.ShardID, rbom.pbftNode.NodeID, sii.SenderShardID, leaderID, bridgeForwardSendAttempts, err)
+				} else {
+					rbom.pbftNode.pl.Plog.Printf("S%dN%d : redirected Bridge SeqIDinfo from shard %d to leader node %d, tx2s %d\n",
+						rbom.pbftNode.ShardID, rbom.pbftNode.NodeID, sii.SenderShardID, leaderID, len(sii.Tx2s))
+				}
+				return
+			}
+		}
 	}
 
 	if sii.Values != nil {
