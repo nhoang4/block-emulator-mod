@@ -21,6 +21,8 @@ import (
 	"time"
 )
 
+const bridgeCommitteeSendAttempts = 30
+
 type BridgeCommitteeMod struct {
 	csvPath      string
 	dataTotalNum int
@@ -130,7 +132,10 @@ func (bcm *BridgeCommitteeMod) txSending(txlist []*core.Transaction) {
 					log.Panic(err)
 				}
 				sendMsg := message.MergeMessage(message.CInject, itByte)
-				go networks.TcpDial(sendMsg, bcm.IpNodeTable[sid][0])
+				if err := networks.TcpDialSync(sendMsg, bcm.IpNodeTable[sid][0], bridgeCommitteeSendAttempts); err != nil {
+					bcm.sl.Slog.Printf("failed to inject %d bridge-mode txs to shard %d after %d attempts: %v\n",
+						len(sendToShard[sid]), sid, bridgeCommitteeSendAttempts, err)
+				}
 			}
 			sendToShard = make(map[uint64][]*core.Transaction)
 			time.Sleep(time.Second)
