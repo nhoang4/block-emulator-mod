@@ -29,6 +29,8 @@ WATCHDOG_SECONDS="${WATCHDOG_SECONDS:-3600}"
 BUILD="${BUILD:-1}"
 KILL_EXISTING="${KILL_EXISTING:-1}"
 LOCALHOST_IPTABLE="${LOCALHOST_IPTABLE:-1}"
+SUPERVISOR_PORT="${SUPERVISOR_PORT:-38800}"
+PORT_WAIT_SECONDS="${PORT_WAIT_SECONDS:-120}"
 RUN_ROOT="${RUN_ROOT:-$REPO_ROOT/run-linux-local-${SHARD_NUM}x${NODES_IN_SHARD}-$(date +%Y%m%d-%H%M%S)}"
 
 if [[ "$BUILD" == "1" ]]; then
@@ -49,6 +51,40 @@ watchdog_pid=""
 finished=0
 emulator_pattern='(^|[[:space:]/])block-emulator-mod([[:space:]]|$)'
 
+terminate_existing_emulators() {
+  pgrep -f "$emulator_pattern" | xargs -r kill -TERM 2>/dev/null || true
+  sleep 2
+  pgrep -f "$emulator_pattern" | xargs -r kill -KILL 2>/dev/null || true
+}
+
+wait_for_supervisor_port() {
+  python3 - "$SUPERVISOR_PORT" "$PORT_WAIT_SECONDS" <<'PY'
+import socket
+import sys
+import time
+
+port = int(sys.argv[1])
+timeout = int(sys.argv[2])
+deadline = time.time() + timeout
+
+while True:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind(("127.0.0.1", port))
+    except OSError:
+        if time.time() >= deadline:
+            print(f"[local] supervisor port 127.0.0.1:{port} is still busy after {timeout}s", file=sys.stderr)
+            sys.exit(1)
+        time.sleep(2)
+    else:
+        print(f"[local] supervisor port 127.0.0.1:{port} is free")
+        sys.exit(0)
+    finally:
+        sock.close()
+PY
+}
+
 cleanup() {
   local ec=$?
   trap - EXIT INT TERM
@@ -60,7 +96,7 @@ cleanup() {
     if ((${#pids[@]} > 0)); then
       kill "${pids[@]}" 2>/dev/null || true
     fi
-    pgrep -f "$emulator_pattern" | xargs -r kill -TERM 2>/dev/null || true
+    terminate_existing_emulators
   fi
   cp "$RUN_ROOT/ipTable.before.json" ipTable.json 2>/dev/null || true
   exit "$ec"
@@ -68,9 +104,9 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 if [[ "$KILL_EXISTING" == "1" ]]; then
-  pgrep -f "$emulator_pattern" | xargs -r kill -TERM 2>/dev/null || true
-  sleep 2
+  terminate_existing_emulators
 fi
+wait_for_supervisor_port
 
 if [[ "$BUILD" == "1" ]]; then
   echo "[local] building block-emulator-mod"
@@ -90,12 +126,13 @@ if [[ -n "$dataset_file" && ! -f "$dataset_file" ]]; then
 fi
 
 if [[ "$LOCALHOST_IPTABLE" == "1" ]]; then
-  python3 - "$SHARD_NUM" "$NODES_IN_SHARD" <<'PY'
+  python3 - "$SHARD_NUM" "$NODES_IN_SHARD" "$SUPERVISOR_PORT" <<'PY'
 import json
 import sys
 
 shard_num = int(sys.argv[1])
 nodes_in_shard = int(sys.argv[2])
+supervisor_port = int(sys.argv[3])
 supervisor_shard = "2147483647"
 
 with open("ipTable.json", "r", encoding="utf-8") as f:
@@ -108,7 +145,7 @@ for sid in range(shard_num):
         shard[str(nid)] = f"127.0.0.1:{port}"
 
 ip_table.setdefault(supervisor_shard, {})
-ip_table[supervisor_shard]["0"] = "127.0.0.1:38800"
+ip_table[supervisor_shard]["0"] = f"127.0.0.1:{supervisor_port}"
 
 with open("ipTable.json", "w", encoding="utf-8") as f:
     json.dump(ip_table, f, indent=2)
@@ -149,6 +186,7 @@ done
 echo "[local] run_root=$RUN_ROOT"
 echo "[local] shards=$SHARD_NUM nodes_per_shard=$NODES_IN_SHARD"
 echo "[local] start delay=${PBFT_START_DELAY_MS}ms timeout=${PBFT_TIMEOUT_MS}ms"
+echo "[local] supervisor_port=$SUPERVISOR_PORT"
 
 env "${common_env[@]}" CONFIG_FILE="$RUN_ROOT/params-b.json" LOG_ROOT="$RUN_ROOT/machine-b" ./scripts/launch_machine_b.sh >"$RUN_ROOT/machine-b.launch.out" 2>&1 &
 pids+=("$!")
@@ -177,6 +215,10 @@ done
 finished=1
 kill "$watchdog_pid" 2>/dev/null || true
 wait "$watchdog_pid" 2>/dev/null || true
+if [[ "$KILL_EXISTING" == "1" ]]; then
+  terminate_existing_emulators
+  wait_for_supervisor_port
+fi
 
 echo "[local] statuses complete; exit status=$status"
 echo "[local] logs: $RUN_ROOT"
