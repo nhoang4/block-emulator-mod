@@ -13,7 +13,9 @@
 set -euo pipefail
 
 module load apps/python3
+set +u
 source ~/.bashrc
+set -u
 
 REPO_ROOT="${REPO_ROOT:-/scratch/nhan_hoang/block-emulator-mod}"
 cd "$REPO_ROOT"
