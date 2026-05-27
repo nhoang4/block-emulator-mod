@@ -2,7 +2,6 @@ package pbft_all
 
 import (
 	"blockEmulator/message"
-	"blockEmulator/networks"
 	"encoding/json"
 	"log"
 	"math/big"
@@ -49,10 +48,6 @@ func (rbom *RawBridgeOutsideModule) handleSeqIDinfos(content []byte) {
 		log.Panic(err)
 	}
 
-	if rbom.forwardToBridgeLeader(message.CSeqIDinfo, content, "Bridge SeqIDinfo", sii.SenderShardID, len(sii.Tx2s)) {
-		return
-	}
-
 	if sii.Values != nil {
 		if val, ok := sii.Values[rbom.pbftNode.ShardID]; ok && val != nil {
 			if _, exists := rbom.pbftNode.bridgeBalances[sii.SenderShardID]; !exists {
@@ -78,33 +73,6 @@ func (rbom *RawBridgeOutsideModule) handleInjectTx(content []byte) {
 	if err != nil {
 		log.Panic(err)
 	}
-	if rbom.forwardToBridgeLeader(message.CInject, content, "injected Bridge txs", it.ToShardID, len(it.Txs)) {
-		return
-	}
 	rbom.pbftNode.CurChain.Txpool.AddTxs2Pool(it.Txs)
 	rbom.pbftNode.pl.Plog.Printf("S%dN%d : has handled injected Bridge txs msg, txs: %d \n", rbom.pbftNode.ShardID, rbom.pbftNode.NodeID, len(it.Txs))
-}
-
-func (rbom *RawBridgeOutsideModule) forwardToBridgeLeader(msgType message.MessageType, content []byte, label string, source uint64, txCount int) bool {
-	leaderID := uint64(rbom.pbftNode.view.Load())
-	if leaderID == rbom.pbftNode.NodeID {
-		return false
-	}
-	shardNodes, ok := rbom.pbftNode.ip_nodeTable[rbom.pbftNode.ShardID]
-	if !ok {
-		return false
-	}
-	leaderAddr, ok := shardNodes[leaderID]
-	if !ok || leaderAddr == "" {
-		return false
-	}
-	msgSend := message.MergeMessage(msgType, content)
-	if err := networks.TcpDialSync(msgSend, leaderAddr, bridgeForwardSendAttempts); err != nil {
-		rbom.pbftNode.pl.Plog.Printf("S%dN%d : failed to redirect %s from %d to leader node %d after %d attempts: %v\n",
-			rbom.pbftNode.ShardID, rbom.pbftNode.NodeID, label, source, leaderID, bridgeForwardSendAttempts, err)
-		return false
-	}
-	rbom.pbftNode.pl.Plog.Printf("S%dN%d : redirected %s from %d to leader node %d, txs %d\n",
-		rbom.pbftNode.ShardID, rbom.pbftNode.NodeID, label, source, leaderID, txCount)
-	return true
 }

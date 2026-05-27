@@ -132,10 +132,18 @@ func (bcm *BridgeCommitteeMod) txSending(txlist []*core.Transaction) {
 					log.Panic(err)
 				}
 				sendMsg := message.MergeMessage(message.CInject, itByte)
-				if err := networks.TcpDialSync(sendMsg, bcm.IpNodeTable[sid][0], bridgeCommitteeSendAttempts); err != nil {
-					bcm.sl.Slog.Printf("failed to inject %d bridge-mode txs to shard %d after %d attempts: %v\n",
-						len(sendToShard[sid]), sid, bridgeCommitteeSendAttempts, err)
+				var wg sync.WaitGroup
+				for nid, addr := range bcm.IpNodeTable[sid] {
+					wg.Add(1)
+					go func(nid uint64, addr string) {
+						defer wg.Done()
+						if err := networks.TcpDialSync(sendMsg, addr, bridgeCommitteeSendAttempts); err != nil {
+							bcm.sl.Slog.Printf("failed to inject %d bridge-mode txs to shard %d node %d after %d attempts: %v\n",
+								len(sendToShard[sid]), sid, nid, bridgeCommitteeSendAttempts, err)
+						}
+					}(nid, addr)
 				}
+				wg.Wait()
 			}
 			sendToShard = make(map[uint64][]*core.Transaction)
 			time.Sleep(time.Second)

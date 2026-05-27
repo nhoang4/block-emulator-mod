@@ -45,6 +45,32 @@ func (txpool *TxPool) AddTxs2Pool(txs []*Transaction) {
 	}
 }
 
+func (txpool *TxPool) RemoveTxs(txs []*Transaction) {
+	if len(txs) == 0 {
+		return
+	}
+	remove := make(map[string]struct{}, len(txs))
+	for _, tx := range txs {
+		if len(tx.TxHash) > 0 {
+			remove[string(tx.TxHash)] = struct{}{}
+		}
+	}
+	if len(remove) == 0 {
+		return
+	}
+
+	txpool.lock.Lock()
+	defer txpool.lock.Unlock()
+	dst := txpool.TxQueue[:0]
+	for _, tx := range txpool.TxQueue {
+		if _, ok := remove[string(tx.TxHash)]; ok {
+			continue
+		}
+		dst = append(dst, tx)
+	}
+	txpool.TxQueue = dst
+}
+
 // add transactions into the pool head
 func (txpool *TxPool) AddTxs2Pool_Head(tx []*Transaction) {
 	txpool.lock.Lock()
