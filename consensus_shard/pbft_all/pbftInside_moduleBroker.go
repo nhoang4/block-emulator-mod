@@ -118,7 +118,10 @@ func (rbhm *RawBrokerPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) bo
 			log.Panic()
 		}
 		msg_send := message.MergeMessage(message.CBlockInfo, bByte)
-		go networks.TcpDial(msg_send, rbhm.pbftNode.ip_nodeTable[params.SupervisorShard][0])
+		if err := networks.TcpDialSync(msg_send, rbhm.pbftNode.ip_nodeTable[params.SupervisorShard][0], blockInfoSendAttempts); err != nil {
+			rbhm.pbftNode.pl.Plog.Printf("S%dN%d : failed to report broker block info to supervisor after %d attempts: %v\n",
+				rbhm.pbftNode.ShardID, rbhm.pbftNode.NodeID, blockInfoSendAttempts, err)
+		}
 		rbhm.pbftNode.pl.Plog.Printf("S%dN%d : sended excuted txs\n", rbhm.pbftNode.ShardID, rbhm.pbftNode.NodeID)
 		rbhm.pbftNode.CurChain.Txpool.GetLocked()
 		metricName := []string{

@@ -16,7 +16,10 @@ import (
 	"time"
 )
 
-const bridgeForwardSendAttempts = 30
+const (
+	bridgeForwardSendAttempts = 30
+	blockInfoSendAttempts     = 30
+)
 
 type RawBridgePbftExtraHandleMod struct {
 	pbftNode *PbftConsensusNode
@@ -184,7 +187,10 @@ func (rbhm *RawBridgePbftExtraHandleMod) handleBridgeLeaderCommit(r *message.Req
 		log.Panic()
 	}
 	msgSend := message.MergeMessage(message.CBlockInfo, bByte)
-	go networks.TcpDial(msgSend, rbhm.pbftNode.ip_nodeTable[params.SupervisorShard][0])
+	if err := networks.TcpDialSync(msgSend, rbhm.pbftNode.ip_nodeTable[params.SupervisorShard][0], blockInfoSendAttempts); err != nil {
+		rbhm.pbftNode.pl.Plog.Printf("S%dN%d : failed to report bridge block info to supervisor after %d attempts: %v\n",
+			rbhm.pbftNode.ShardID, rbhm.pbftNode.NodeID, blockInfoSendAttempts, err)
+	}
 
 	rbhm.pbftNode.CurChain.Txpool.GetLocked()
 	metricName := []string{
