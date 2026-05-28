@@ -12,7 +12,6 @@ import (
 	"log"
 	"math/big"
 	"strconv"
-	"sync"
 	"time"
 )
 
@@ -68,7 +67,6 @@ func (rbhm *RawBridgePbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) bo
 	block := core.DecodeB(r.Msg.Content)
 	rbhm.pbftNode.pl.Plog.Printf("S%dN%d : adding the bridge block %d...now height = %d \n", rbhm.pbftNode.ShardID, rbhm.pbftNode.NodeID, block.Header.Number, rbhm.pbftNode.CurChain.CurrentBlock.Header.Number)
 	rbhm.pbftNode.CurChain.AddBlock(block)
-	rbhm.pbftNode.CurChain.Txpool.RemoveTxs(block.Body)
 	rbhm.pbftNode.pl.Plog.Printf("S%dN%d : added the bridge block %d... \n", rbhm.pbftNode.ShardID, rbhm.pbftNode.NodeID, block.Header.Number)
 
 	if rbhm.pbftNode.NodeID == uint64(rbhm.pbftNode.view.Load()) {
@@ -154,18 +152,10 @@ func (rbhm *RawBridgePbftExtraHandleMod) handleBridgeLeaderCommit(r *message.Req
 			log.Panic()
 		}
 		msgSend := message.MergeMessage(message.CSeqIDinfo, sByte)
-		var wg sync.WaitGroup
-		for nid, addr := range rbhm.pbftNode.ip_nodeTable[sid] {
-			wg.Add(1)
-			go func(nid uint64, addr string) {
-				defer wg.Done()
-				if err := networks.TcpDialSync(msgSend, addr, bridgeForwardSendAttempts); err != nil {
-					rbhm.pbftNode.pl.Plog.Printf("S%dN%d : failed to forward %d bridge txs to shard %d node %d after %d attempts: %v\n",
-						rbhm.pbftNode.ShardID, rbhm.pbftNode.NodeID, len(tx2s), sid, nid, bridgeForwardSendAttempts, err)
-				}
-			}(nid, addr)
+		if err := networks.TcpDialSync(msgSend, rbhm.pbftNode.ip_nodeTable[sid][0], bridgeForwardSendAttempts); err != nil {
+			rbhm.pbftNode.pl.Plog.Printf("S%dN%d : failed to forward %d bridge txs to shard %d after %d attempts: %v\n",
+				rbhm.pbftNode.ShardID, rbhm.pbftNode.NodeID, len(tx2s), sid, bridgeForwardSendAttempts, err)
 		}
-		wg.Wait()
 	}
 
 	bim := message.BlockInfoMsg{
